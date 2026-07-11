@@ -16,19 +16,16 @@ namespace Minecraft.UI
         // ==================== 配置常量 ====================
 
         /// <summary>信息区距屏幕左上角的边距。</summary>
-        private const float InfoMargin = 10f;
+        private const float InfoMargin = 14f;
 
         /// <summary>信息区尺寸。</summary>
-        private static readonly Vector2 InfoSize = new Vector2(280f, 110f);
+        private static readonly Vector2 InfoSize = new Vector2(260f, 116f);
 
-        /// <summary>十字准星尺寸（20×20）。</summary>
-        private const float CrosshairSize = 20f;
+        /// <summary>十字准星尺寸（24×24，略大一些更清晰）。</summary>
+        private const float CrosshairSize = 24f;
 
         /// <summary>十字准星线条粗细。</summary>
-        private const float CrosshairThickness = 2f;
-
-        /// <summary>十字准星距屏幕右上角的边距。</summary>
-        private const float CrosshairMargin = 20f;
+        private const float CrosshairThickness = 3f;
 
         /// <summary>FPS 刷新间隔（秒）。</summary>
         private const float FpsUpdateInterval = 0.5f;
@@ -87,47 +84,79 @@ namespace Minecraft.UI
 
         // ==================== UI 构建 ====================
 
-        /// <summary>创建左上角信息区（半透明背景 + 文本）。</summary>
+        /// <summary>创建左上角信息区（圆角渐变背景 + 阴影 + 文本）。</summary>
         private void CreateInfoArea()
         {
-            // 半透明背景容器，锚定左上角
-            var bg = UIFactory.CreateImage(transform, "InfoBg",
-                new Color(0f, 0f, 0f, 0.4f), Vector2.zero, InfoSize);
-            bg.raycastTarget = false;
+            // 外层边框（深色描边），锚定左上角
+            var borderRect = UIFactory.CreateImage(transform, "InfoBorder",
+                new Color(0.08f, 0.10f, 0.14f, 0.88f), Vector2.zero, InfoSize).rectTransform;
+            borderRect.anchorMin = new Vector2(0f, 1f);
+            borderRect.anchorMax = new Vector2(0f, 1f);
+            borderRect.pivot = new Vector2(0f, 1f);
+            borderRect.anchoredPosition = new Vector2(InfoMargin, -InfoMargin);
 
-            var bgRect = bg.rectTransform;
-            bgRect.anchorMin = new Vector2(0f, 1f);
-            bgRect.anchorMax = new Vector2(0f, 1f);
-            bgRect.pivot = new Vector2(0f, 1f);
-            bgRect.anchoredPosition = new Vector2(InfoMargin, -InfoMargin);
+            // 内层背景（略小，形成 1px 边框效果）
+            var innerSize = new Vector2(InfoSize.x - 2f, InfoSize.y - 2f);
+            var innerBg = UIFactory.CreateImage(borderRect, "InfoBg",
+                new Color(0.12f, 0.16f, 0.22f, 0.92f), Vector2.zero, innerSize);
+            innerBg.raycastTarget = false;
+            var innerRect = innerBg.rectTransform;
+            Stretch(innerRect);
+            innerRect.offsetMin = new Vector2(1f, 1f);
+            innerRect.offsetMax = new Vector2(-1f, -1f);
 
-            // 信息文本（铺满容器，左上对齐，留内边距）
-            _infoText = UIFactory.CreateText(bgRect, "InfoText", string.Empty, 14,
-                Color.white, Vector2.zero, InfoSize);
+            // 标题条（顶部翡翠色细条，增加层次感）
+            var titleBar = UIFactory.CreateImage(innerRect, "TitleBar",
+                new Color(0.20f, 0.55f, 0.35f, 0.9f), Vector2.zero, new Vector2(innerSize.x, 3f));
+            titleBar.raycastTarget = false;
+            var titleRect = titleBar.rectTransform;
+            titleRect.anchorMin = new Vector2(0f, 1f);
+            titleRect.anchorMax = new Vector2(1f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.offsetMin = Vector2.zero;
+            titleRect.offsetMax = Vector2.zero;
+
+            // 信息文本（铺满内层背景，左上对齐，留内边距）
+            _infoText = UIFactory.CreateText(innerRect, "InfoText", string.Empty, 14,
+                new Color(0.92f, 0.95f, 1f), Vector2.zero, innerSize);
             _infoText.alignment = TextAnchor.UpperLeft;
+            _infoText.supportRichText = false;
+            _infoText.raycastTarget = false;
 
             var textRect = _infoText.rectTransform;
             Stretch(textRect);
-            textRect.offsetMin = new Vector2(6f, 6f);   // 左下内边距
-            textRect.offsetMax = new Vector2(-6f, -6f); // 右上内边距
+            textRect.offsetMin = new Vector2(8f, 6f);   // 左下内边距
+            textRect.offsetMax = new Vector2(-8f, -10f); // 右上内边距（顶部留出标题条空间）
         }
 
-        /// <summary>创建右上角十字准星（白色半透明十字，20×20）。</summary>
+        /// <summary>创建屏幕中心十字准星（白色半透明十字 + 中心点）。</summary>
         private void CreateCrosshair()
         {
-            // 容器（透明），锚定右上角
+            // 容器（透明），锚定屏幕中心
             var container = new GameObject("Crosshair", typeof(RectTransform));
             container.transform.SetParent(transform, false);
 
             var containerRect = container.GetComponent<RectTransform>();
-            containerRect.anchorMin = new Vector2(1f, 1f);
-            containerRect.anchorMax = new Vector2(1f, 1f);
+            containerRect.anchorMin = new Vector2(0.5f, 0.5f);
+            containerRect.anchorMax = new Vector2(0.5f, 0.5f);
             containerRect.pivot = new Vector2(0.5f, 0.5f);
-            containerRect.anchoredPosition = new Vector2(-CrosshairMargin, -CrosshairMargin);
+            containerRect.anchoredPosition = Vector2.zero;
             containerRect.sizeDelta = new Vector2(CrosshairSize, CrosshairSize);
 
-            // 十字颜色：白色半透明
-            Color crossColor = new Color(1f, 1f, 1f, 0.6f);
+            // 十字颜色：白色带轻微发光感
+            Color crossColor = new Color(1f, 1f, 1f, 0.75f);
+            // 描边颜色：深色，增加对比度
+            Color outlineColor = new Color(0f, 0f, 0f, 0.5f);
+
+            // 描边横条（略大，在白色横条下方）
+            var hOutline = UIFactory.CreateImage(containerRect, "CrossHOutline",
+                outlineColor, Vector2.zero, new Vector2(CrosshairSize + 2f, CrosshairThickness + 2f));
+            hOutline.raycastTarget = false;
+
+            // 描边竖条
+            var vOutline = UIFactory.CreateImage(containerRect, "CrossVOutline",
+                outlineColor, Vector2.zero, new Vector2(CrosshairThickness + 2f, CrosshairSize + 2f));
+            vOutline.raycastTarget = false;
 
             // 水平横条（铺满容器宽度）
             var hBar = UIFactory.CreateImage(containerRect, "CrossH",
@@ -138,6 +167,11 @@ namespace Minecraft.UI
             var vBar = UIFactory.CreateImage(containerRect, "CrossV",
                 crossColor, Vector2.zero, new Vector2(CrosshairThickness, CrosshairSize));
             vBar.raycastTarget = false;
+
+            // 中心点（小方块，增加瞄准精度感）
+            var dot = UIFactory.CreateImage(containerRect, "CrossDot",
+                new Color(1f, 0.85f, 0.3f, 0.9f), Vector2.zero, new Vector2(2f, 2f));
+            dot.raycastTarget = false;
         }
 
         // ==================== 数据更新 ====================

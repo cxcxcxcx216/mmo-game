@@ -252,31 +252,49 @@ namespace Minecraft.Game.Systems
 
         // ==================== 材质创建 ====================
 
-        /// <summary>创建固体方块共享材质（Standard 不透明，支持顶点色，开启 GPU 实例化）。</summary>
+        /// <summary>创建固体方块共享材质（Standard 不透明，使用程序化纹理图集，开启 GPU 实例化）。</summary>
         private static Material CreateSolidMaterial()
         {
+            Texture2D atlas = TextureAtlasGenerator.GetAtlasTexture();
+
             Shader shader = Shader.Find("Standard");
             if (shader == null)
-                shader = Shader.Find("Unlit/Color");
+                shader = Shader.Find("Unlit/Texture");
             var mat = new Material(shader);
             mat.name = "Chunk_Solid";
+            mat.mainTexture = atlas;
             mat.color = Color.white;
+
+            // 固体方块使用不透明渲染模式
+            mat.SetInt("_Mode", 0);
+            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.One);
+            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.Zero);
+            mat.SetInt("_ZWrite", 1);
+            mat.DisableKeyword("_ALPHATEST_ON");
+            mat.DisableKeyword("_ALPHABLEND_ON");
+            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
+
+            // 启用 GPU 实例化（降低 Draw Call）
             mat.enableInstancing = true;
             return mat;
         }
 
         /// <summary>
-        /// 创建透明方块共享材质（Standard 透明模式）。
+        /// 创建透明方块共享材质（Standard 透明模式，使用程序化纹理图集）。
         /// Standard Shader 的 _Mode：0=Opaque 1=Cutout 2=Fade 3=Transparent。
         /// 仅设置 _Mode 不会真正切换混合，还需配套设置 Blend/ZWrite/关键字/渲染队列。
         /// </summary>
         private static Material CreateTransparentMaterial()
         {
+            Texture2D atlas = TextureAtlasGenerator.GetAtlasTexture();
+
             Shader shader = Shader.Find("Standard");
             if (shader == null)
                 shader = Shader.Find("Unlit/Transparent");
             var mat = new Material(shader);
             mat.name = "Chunk_Transparent";
+            mat.mainTexture = atlas;
             mat.color = Color.white;
             mat.enableInstancing = true;
 

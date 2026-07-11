@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.Rendering;
 using Minecraft.Core.ECS;
 using Minecraft.Game.World;
 using Minecraft.Game.Systems;
@@ -333,21 +334,84 @@ namespace Minecraft.Bootstrap
 
         // ==================== 相机 ====================
 
-        /// <summary>创建主相机。</summary>
+        /// <summary>创建主相机（含天空盒、雾效、方向光、环境光）。</summary>
         private void CreateCamera()
         {
-            if (Camera.main != null) return;
+            if (Camera.main != null)
+            {
+                SetupLightingAndSky();
+                return;
+            }
 
             var camGo = new GameObject("MainCamera");
             camGo.tag = "MainCamera";
             var cam = camGo.AddComponent<Camera>();
-            cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = new Color(0.45f, 0.55f, 0.65f);
+            cam.clearFlags = CameraClearFlags.Skybox;
+            cam.backgroundColor = new Color(0.5f, 0.7f, 0.95f);
             cam.transform.position = new Vector3(8, 45, 8);
             cam.nearClipPlane = 0.1f;
             cam.farClipPlane = 1000f;
+
+            // 雾效：远处方块淡入天空色，隐藏渲染边界
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.Linear;
+            RenderSettings.fogColor = new Color(0.62f, 0.74f, 0.88f);
+            RenderSettings.fogStartDistance = 60f;
+            RenderSettings.fogEndDistance = 180f;
+
             camGo.AddComponent<FlareLayer>();
             camGo.AddComponent<AudioListener>();
+
+            SetupLightingAndSky();
+        }
+
+        /// <summary>
+        /// 配置场景光照与天空盒：
+        /// - 方向光（太阳）带柔和阴影
+        /// - 环境光梯度（天空/地面/反射）
+        /// - 程序化天空盒材质（渐变蓝色天空）
+        /// </summary>
+        private static void SetupLightingAndSky()
+        {
+            // ===== 方向光（太阳光） =====
+            var sunGo = GameObject.Find("DirectionalLight");
+            if (sunGo == null)
+            {
+                sunGo = new GameObject("DirectionalLight");
+                var sun = sunGo.AddComponent<Light>();
+                sun.type = LightType.Directional;
+                sun.color = new Color(1f, 0.96f, 0.88f);
+                sun.intensity = 1.3f;
+                sun.shadows = LightShadows.Soft;
+                sun.shadowStrength = 0.85f;
+                sun.shadowResolution = LightShadowResolution.Medium;
+                sun.shadowBias = 0.04f;
+                sun.shadowNormalBias = 0.4f;
+                sun.shadowNearPlane = 0.2f;
+                // 太阳角度：从西南偏上方照射，模拟下午阳光
+                sunGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+            }
+
+            // ===== 环境光 =====
+            RenderSettings.ambientMode = AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.45f, 0.58f, 0.72f);
+            RenderSettings.ambientEquatorColor = new Color(0.4f, 0.45f, 0.38f);
+            RenderSettings.ambientGroundColor = new Color(0.32f, 0.28f, 0.24f);
+            RenderSettings.ambientIntensity = 1.1f;
+            RenderSettings.reflectionIntensity = 1f;
+
+            // ===== 程序化天空盒（渐变蓝色） =====
+            Shader skyShader = Shader.Find("Skybox/Procedural");
+            if (skyShader != null)
+            {
+                var skyMat = new Material(skyShader);
+                skyMat.name = "ProceduralSkybox";
+                skyMat.SetColor("_SunTint", new Color(1f, 0.92f, 0.7f));
+                skyMat.SetColor("_SkyTint", new Color(0.5f, 0.7f, 1f));
+                skyMat.SetFloat("_AtmosphereThickness", 1.2f);
+                skyMat.SetFloat("_Exposure", 1.1f);
+                RenderSettings.skybox = skyMat;
+            }
         }
 
         // ==================== 方块世界 ====================
@@ -369,7 +433,7 @@ namespace Minecraft.Bootstrap
 
         // ==================== 玩家 ====================
 
-        /// <summary>创建玩家：GameObject + CharacterController + PlayerController + PlayerInteraction。</summary>
+        /// <summary>创建玩家：GameObject + CharacterController + PlayerController + PlayerInteraction + 视觉模型。</summary>
         private void CreatePlayer()
         {
             var playerGo = new GameObject("[Player]");
@@ -391,6 +455,106 @@ namespace Minecraft.Bootstrap
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             if (cmField != null)
                 cmField.SetValue(_playerInteraction, _chunkManager);
+
+            // 创建玩家视觉模型（第一人称手臂 + 第三人称身体）
+            CreatePlayerVisuals(playerGo);
+        }
+
+        /// <summary>
+        /// 创建玩家视觉模型：
+        /// - 第一人称：相机前方悬浮的手臂方块（模拟手持物品）
+        /// - 第三人称身体（其他玩家可见，由RemotePlayerEntity使用）
+        /// </summary>
+        private static void CreatePlayerVisuals(GameObject playerGo)
+        {
+            // ===== 第三人称身体模型（其他玩家可见） =====
+            var bodyGo = new GameObject("PlayerBody");
+            bodyGo.transform.SetParent(playerGo.transform, false);
+            bodyGo.transform.localPosition = new Vector3(0f, 0f, 0f);
+
+            // 身体（躯干）
+            var torso = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            torso.name = "Torso";
+            torso.transform.SetParent(bodyGo.transform, false);
+            torso.transform.localScale = new Vector3(0.6f, 0.8f, 0.35f);
+            torso.transform.localPosition = new Vector3(0f, 1.1f, 0f);
+            var torsoMat = new Material(Shader.Find("Standard") ?? Shader.Find("Unlit/Color"));
+            torsoMat.name = "Player_Torso";
+            torsoMat.color = new Color(0.25f, 0.45f, 0.70f); // 蓝色上衣
+            torso.GetComponent<MeshRenderer>().sharedMaterial = torsoMat;
+
+            // 头部
+            var head = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            head.name = "Head";
+            head.transform.SetParent(bodyGo.transform, false);
+            head.transform.localScale = new Vector3(0.5f, 0.5f, 0.5f);
+            head.transform.localPosition = new Vector3(0f, 1.75f, 0f);
+            var headMat = new Material(Shader.Find("Standard") ?? Shader.Find("Unlit/Color"));
+            headMat.name = "Player_Head";
+            headMat.color = new Color(0.95f, 0.80f, 0.65f); // 肤色
+            head.GetComponent<MeshRenderer>().sharedMaterial = headMat;
+
+            // 左手臂
+            var leftArm = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            leftArm.name = "LeftArm";
+            leftArm.transform.SetParent(bodyGo.transform, false);
+            leftArm.transform.localScale = new Vector3(0.2f, 0.8f, 0.2f);
+            leftArm.transform.localPosition = new Vector3(-0.4f, 1.1f, 0f);
+            leftArm.GetComponent<MeshRenderer>().sharedMaterial = torsoMat;
+
+            // 右手臂
+            var rightArm = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            rightArm.name = "RightArm";
+            rightArm.transform.SetParent(bodyGo.transform, false);
+            rightArm.transform.localScale = new Vector3(0.2f, 0.8f, 0.2f);
+            rightArm.transform.localPosition = new Vector3(0.4f, 1.1f, 0f);
+            rightArm.GetComponent<MeshRenderer>().sharedMaterial = torsoMat;
+
+            // 左腿
+            var leftLeg = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            leftLeg.name = "LeftLeg";
+            leftLeg.transform.SetParent(bodyGo.transform, false);
+            leftLeg.transform.localScale = new Vector3(0.25f, 0.7f, 0.25f);
+            leftLeg.transform.localPosition = new Vector3(-0.15f, 0.35f, 0f);
+            var legMat = new Material(Shader.Find("Standard") ?? Shader.Find("Unlit/Color"));
+            legMat.name = "Player_Legs";
+            legMat.color = new Color(0.18f, 0.22f, 0.35f); // 深蓝色裤子
+            leftLeg.GetComponent<MeshRenderer>().sharedMaterial = legMat;
+
+            // 右腿
+            var rightLeg = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            rightLeg.name = "RightLeg";
+            rightLeg.transform.SetParent(bodyGo.transform, false);
+            rightLeg.transform.localScale = new Vector3(0.25f, 0.7f, 0.25f);
+            rightLeg.transform.localPosition = new Vector3(0.15f, 0.35f, 0f);
+            rightLeg.GetComponent<MeshRenderer>().sharedMaterial = legMat;
+
+            // 第三人称模型默认隐藏（第一人称看不到自己身体）
+            bodyGo.SetActive(false);
+
+            // ===== 第一人称手持方块（相机前方的悬浮方块，参考Minecraft视角优化） =====
+            var handGo = new GameObject("FirstPersonHand");
+            handGo.transform.SetParent(playerGo.transform, false);
+            var handBlock = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            handBlock.name = "HandBlock";
+            handBlock.transform.SetParent(handGo.transform, false);
+            // 尺寸缩小到0.3格（Minecraft标准），减少视野遮挡
+            handBlock.transform.localScale = new Vector3(0.3f, 0.3f, 0.3f);
+            // 位置偏右下角，Y略低于眼睛高度，Z靠近相机但不挡中心视线
+            handBlock.transform.localPosition = new Vector3(0.55f, 1.45f, 0.5f);
+            // 倾斜角度加大，让方块"躺"在手中（X旋转-30°让顶面朝向相机）
+            handBlock.transform.localRotation = Quaternion.Euler(-30f, 25f, 10f);
+            var handMat = new Material(Shader.Find("Standard") ?? Shader.Find("Unlit/Color"));
+            handMat.name = "HandBlock_Mat";
+            handMat.color = new Color(0.55f, 0.75f, 0.40f); // 草绿色方块
+            handBlock.GetComponent<MeshRenderer>().sharedMaterial = handMat;
+
+            // 设置相机FOV为70°（Minecraft默认值），物品在边缘更不显眼
+            var cam = playerGo.GetComponentInChildren<Camera>();
+            if (cam != null)
+            {
+                cam.fieldOfView = 70f;
+            }
         }
 
         // ==================== ECS 系统 ====================

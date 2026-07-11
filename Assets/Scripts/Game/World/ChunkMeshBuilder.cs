@@ -154,11 +154,12 @@ namespace Minecraft.Game.World
             var triangles = new List<int>();
             var colors = new List<Color32>();
             var normals = new List<Vector3>();
+            var uvs = new List<Vector2>();
 
-            BuildMeshInternal(chunk, chunkManager, vertices, triangles, colors, normals,
+            BuildMeshInternal(chunk, chunkManager, vertices, triangles, colors, normals, uvs,
                 buildTransparent: false, out _);
 
-            SubmitMesh(mesh, vertices, triangles, colors, normals);
+            SubmitMesh(mesh, vertices, triangles, colors, normals, uvs);
         }
 
         /// <summary>
@@ -177,11 +178,12 @@ namespace Minecraft.Game.World
             var triangles = new List<int>();
             var colors = new List<Color32>();
             var normals = new List<Vector3>();
+            var uvs = new List<Vector2>();
 
-            BuildMeshInternal(chunk, chunkManager, vertices, triangles, colors, normals,
+            BuildMeshInternal(chunk, chunkManager, vertices, triangles, colors, normals, uvs,
                 buildTransparent: false, out hasTransparentFaces);
 
-            SubmitMesh(mesh, vertices, triangles, colors, normals);
+            SubmitMesh(mesh, vertices, triangles, colors, normals, uvs);
         }
 
         /// <summary>
@@ -198,11 +200,12 @@ namespace Minecraft.Game.World
             var triangles = new List<int>();
             var colors = new List<Color32>();
             var normals = new List<Vector3>();
+            var uvs = new List<Vector2>();
 
-            BuildMeshInternal(chunk, chunkManager, vertices, triangles, colors, normals,
+            BuildMeshInternal(chunk, chunkManager, vertices, triangles, colors, normals, uvs,
                 buildTransparent: true, out _);
 
-            SubmitMesh(mesh, vertices, triangles, colors, normals);
+            SubmitMesh(mesh, vertices, triangles, colors, normals, uvs);
         }
 
         // ==================== 内部实现 ====================
@@ -218,11 +221,12 @@ namespace Minecraft.Game.World
         /// <param name="triangles">三角形索引列表（输出）。</param>
         /// <param name="colors">顶点颜色列表（输出）。</param>
         /// <param name="normals">法线列表（输出）。</param>
+        /// <param name="uvs">UV 坐标列表（输出）。</param>
         /// <param name="buildTransparent">true 构建透明方块面，false 构建固体方块面。</param>
         /// <param name="hasTransparentFaces">输出：是否遇到透明方块（仅在 buildTransparent=false 时有意义）。</param>
         private static void BuildMeshInternal(Chunk chunk, ChunkManager chunkManager,
             List<Vector3> vertices, List<int> triangles,
-            List<Color32> colors, List<Vector3> normals,
+            List<Color32> colors, List<Vector3> normals, List<Vector2> uvs,
             bool buildTransparent, out bool hasTransparentFaces)
         {
             hasTransparentFaces = false;
@@ -277,8 +281,8 @@ namespace Minecraft.Game.World
                                 continue;
 
                             // 添加该面的几何数据
-                            AddFace(vertices, triangles, colors, normals,
-                                x, y, z, offsetX, offsetZ, face, info);
+                            AddFace(vertices, triangles, colors, normals, uvs,
+                                x, y, z, offsetX, offsetZ, face, info, type);
                         }
                     }
                 }
@@ -343,13 +347,14 @@ namespace Minecraft.Game.World
 
         /// <summary>
         /// 向列表中添加一个面的几何数据。
-        /// 每个面包含：4 个顶点 + 2 个三角形 + 4 个颜色 + 4 个法线。
+        /// 每个面包含：4 个顶点 + 2 个三角形 + 4 个颜色 + 4 个法线 + 4 个 UV。
         /// 顶点坐标为世界坐标（区块偏移 + 局部坐标 + 面顶点偏移）。
         /// </summary>
         /// <param name="vertices">顶点列表。</param>
         /// <param name="triangles">三角形索引列表。</param>
         /// <param name="colors">颜色列表。</param>
         /// <param name="normals">法线列表。</param>
+        /// <param name="uvs">UV 坐标列表。</param>
         /// <param name="x">方块局部 X 坐标。</param>
         /// <param name="y">方块局部 Y 坐标。</param>
         /// <param name="z">方块局部 Z 坐标。</param>
@@ -357,10 +362,11 @@ namespace Minecraft.Game.World
         /// <param name="offsetZ">区块世界 Z 偏移。</param>
         /// <param name="faceIndex">面索引（0-5）。</param>
         /// <param name="info">方块的属性信息。</param>
+        /// <param name="type">方块类型（用于查询纹理 UV）。</param>
         private static void AddFace(List<Vector3> vertices, List<int> triangles,
-            List<Color32> colors, List<Vector3> normals,
+            List<Color32> colors, List<Vector3> normals, List<Vector2> uvs,
             int x, int y, int z, int offsetX, int offsetZ,
-            int faceIndex, BlockInfo info)
+            int faceIndex, BlockInfo info, BlockType type)
         {
             // 当前面的顶点起始索引（三角形索引基于此偏移）
             int startIndex = vertices.Count;
@@ -399,6 +405,13 @@ namespace Minecraft.Game.World
             normals.Add(normal);
             normals.Add(normal);
             normals.Add(normal);
+
+            // 添加 4 个 UV 坐标（从纹理图集查询，顺序与顶点一致：0,1,2,3）
+            Vector2[] faceUVs = TextureAtlasGenerator.GetUV(type, faceIndex);
+            uvs.Add(faceUVs[0]);
+            uvs.Add(faceUVs[1]);
+            uvs.Add(faceUVs[2]);
+            uvs.Add(faceUVs[3]);
         }
 
         /// <summary>
@@ -420,21 +433,23 @@ namespace Minecraft.Game.World
 
         /// <summary>
         /// 将构建好的几何数据提交到 Mesh。
-        /// 顺序：清空 → 顶点 → 三角形 → 颜色 → 法线 → 重算边界。
+        /// 顺序：清空 → 顶点 → 三角形 → 颜色 → 法线 → UV → 重算边界。
         /// </summary>
         /// <param name="mesh">目标 Mesh。</param>
         /// <param name="vertices">顶点列表。</param>
         /// <param name="triangles">三角形索引列表。</param>
         /// <param name="colors">颜色列表。</param>
         /// <param name="normals">法线列表。</param>
+        /// <param name="uvs">UV 坐标列表。</param>
         private static void SubmitMesh(Mesh mesh, List<Vector3> vertices, List<int> triangles,
-            List<Color32> colors, List<Vector3> normals)
+            List<Color32> colors, List<Vector3> normals, List<Vector2> uvs)
         {
             mesh.Clear();
             mesh.SetVertices(vertices);
             mesh.SetTriangles(triangles, 0);
             mesh.SetColors(colors);
             mesh.SetNormals(normals);
+            mesh.SetUVs(0, uvs);
             mesh.RecalculateBounds();
         }
     }

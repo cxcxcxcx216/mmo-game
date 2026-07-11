@@ -18,20 +18,20 @@ namespace Minecraft.UI
         /// <summary>快捷栏槽位数。</summary>
         public const int SlotCount = 9;
 
-        /// <summary>单格尺寸（50×50）。</summary>
-        private const float SlotSize = 50f;
+        /// <summary>单格尺寸（56×56，更大更清晰）。</summary>
+        private const float SlotSize = 56f;
 
         /// <summary>格间距。</summary>
-        private const float SlotGap = 4f;
+        private const float SlotGap = 6f;
 
         /// <summary>容器距屏幕底部的偏移。</summary>
-        private const float BottomOffset = 20f;
+        private const float BottomOffset = 24f;
 
         /// <summary>方块图标内缩尺寸（图标比格子略小，留出边框）。</summary>
-        private const float IconSize = 44f;
+        private const float IconSize = 48f;
 
-        /// <summary>选中边框尺寸（略大于格子，形成 2px 白边）。</summary>
-        private const float SelectionSize = 54f;
+        /// <summary>选中边框尺寸（略大于格子，形成 3px 翡翠绿边）。</summary>
+        private const float SelectionSize = 62f;
 
         // ==================== 运行时状态 ====================
 
@@ -161,16 +161,23 @@ namespace Minecraft.UI
             slotRect.anchoredPosition = new Vector2(x, 0f);
             slotRect.sizeDelta = new Vector2(SlotSize, SlotSize);
 
-            // 选中边框（略大于格子，居中，默认隐藏）
+            // 外框（深色描边）
+            var border = UIFactory.CreateImage(slotRect, "Border",
+                new Color(0.08f, 0.10f, 0.14f, 0.9f), Vector2.zero, new Vector2(SlotSize, SlotSize));
+            border.raycastTarget = false;
+
+            // 选中边框（翡翠绿，略大于格子，居中，默认隐藏）
             var selection = UIFactory.CreateImage(slotRect, "Selection",
-                Color.white, Vector2.zero, new Vector2(SelectionSize, SelectionSize));
+                new Color(0.30f, 0.75f, 0.45f, 1f), Vector2.zero, new Vector2(SelectionSize, SelectionSize));
             selection.raycastTarget = false;
             selection.enabled = false;
             _slotSelections[index] = selection;
 
-            // 格子背景（深灰色）
+            // 格子背景（深灰半透明，略小于外框形成 2px 边）
+            const float borderInset = 2f;
             var bg = UIFactory.CreateImage(slotRect, "Bg",
-                new Color(0.2f, 0.2f, 0.2f, 0.8f), Vector2.zero, new Vector2(SlotSize, SlotSize));
+                new Color(0.15f, 0.18f, 0.24f, 0.92f), Vector2.zero,
+                new Vector2(SlotSize - borderInset, SlotSize - borderInset));
             bg.raycastTarget = false;
 
             // 方块图标（内缩，颜色由 SetSlot 设置）
@@ -179,13 +186,23 @@ namespace Minecraft.UI
             icon.raycastTarget = false;
             _slotIcons[index] = icon;
 
-            // 左上角数字编号（1~9）
-            var number = UIFactory.CreateText(slotRect, "Number", (index + 1).ToString(),
-                12, Color.white, Vector2.zero, new Vector2(SlotSize, SlotSize));
-            number.alignment = TextAnchor.UpperLeft;
+            // 左上角数字编号（1~9），带阴影效果
+            var numberShadow = UIFactory.CreateText(slotRect, "NumberShadow", (index + 1).ToString(),
+                12, new Color(0f, 0f, 0f, 0.8f), Vector2.zero, new Vector2(SlotSize, SlotSize));
+            numberShadow.alignment = TextAnchor.UpperLeft;
+            numberShadow.supportRichText = false;
+            numberShadow.raycastTarget = false;
+            var shadowRect = numberShadow.rectTransform;
+            shadowRect.offsetMin = new Vector2(5f, -1f);
+            shadowRect.offsetMax = new Vector2(2f, -4f);
 
+            var number = UIFactory.CreateText(slotRect, "Number", (index + 1).ToString(),
+                12, new Color(0.95f, 0.98f, 1f), Vector2.zero, new Vector2(SlotSize, SlotSize));
+            number.alignment = TextAnchor.UpperLeft;
+            number.supportRichText = false;
+            number.raycastTarget = false;
             var numberRect = number.rectTransform;
-            numberRect.offsetMin = new Vector2(3f, 0f);
+            numberRect.offsetMin = new Vector2(4f, 0f);
             numberRect.offsetMax = new Vector2(0f, -3f);
 
             // 初始类型为空气
