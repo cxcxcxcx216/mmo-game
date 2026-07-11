@@ -1,0 +1,29 @@
+[
+  {
+    "id": 1,
+    "name": "矿工",
+    "description": "擅长挖掘矿物拥有更高挖掘速度",
+    "base_hp": 100,
+    "base_atk": 10,
+    "base_def": 5,
+    "base_speed": 4.5
+  },
+  {
+    "id": 2,
+    "name": "战士",
+    "description": "擅长战斗拥有更高生命值和攻击力",
+    "base_hp": 150,
+    "base_atk": 20,
+    "base_def": 10,
+    "base_speed": 4.0
+  },
+  {
+    "id": 3,
+    "name": "建筑师",
+    "description": "擅长建造拥有更多背包空间",
+    "base_hp": 120,
+    "base_atk": 8,
+    "base_def": 8,
+    "base_speed": 4.5
+  }
+]

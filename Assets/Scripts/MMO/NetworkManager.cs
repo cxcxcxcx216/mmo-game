@@ -1,0 +1,341 @@
+using System;
+using UnityEngine;
+using MMO.Network;
+using MMO.Protocol;
+
+namespace Minecraft.MMO
+{
+    /// <summary>
+    /// 网络管理器。整合 <see cref="TcpNetworkClient"/> 与 <see cref="MessageDispatcher"/>，
+    /// 提供游戏业务级的网络 API（登录、选角、进游戏、移动同步、实体同步等）。
+    /// <para>
+    /// 设计要点：
+    /// 1. 单例 <see cref="MonoBehaviour"/>，跨场景持久化。
+    /// 2. 内部创建 <see cref="TcpNetworkClient"/> 子组件，统一管理连接生命周期。
+    /// 3. 所有协议消息通过 <see cref="MessageDispatcher"/> 派发到主线程。
+    /// 4. 通过 C# 事件向 UI 层通知登录流程结果（成功/失败/超时）。
+    /// 5. 离线模式下不创建连接，直接进入游戏（单机沙盒）。
+    /// </para>
+    /// </summary>
+    public class NetworkManager : MonoBehaviour
+    {
+        // ==================== 单例 ====================
+
+        /// <summary>全局单例实例。</summary>
+        public static NetworkManager Instance { get; private set; }
+
+        // ==================== 组件引用 ====================
+
+        /// <summary>TCP 客户端子组件。</summary>
+        private TcpNetworkClient _client;
+
+        /// <summary>消息分发器（主线程调用）。</summary>
+        private readonly MessageDispatcher _dispatcher = new MessageDispatcher();
+
+        // ==================== 业务事件 ====================
+
+        /// <summary>连接成功。</summary>
+        public event Action OnConnected;
+
+        /// <summary>连接失败。参数：失败原因。</summary>
+        public event Action<string> OnConnectFailed;
+
+        /// <summary>连接断开。参数：断开原因。</summary>
+        public event Action<string> OnDisconnected;
+
+        /// <summary>登录响应。</summary>
+        public event Action<LoginAck> OnLoginAck;
+
+        /// <summary>服务器列表响应。</summary>
+        public event Action<ServerListAck> OnServerListAck;
+
+        /// <summary>角色列表响应。</summary>
+        public event Action<RoleListAck> OnRoleListAck;
+
+        /// <summary>创建角色响应。</summary>
+        public event Action<CreateRoleAck> OnCreateRoleAck;
+
+        /// <summary>进入游戏响应。</summary>
+        public event Action<EnterGameAck> OnEnterGameAck;
+
+        /// <summary>离开游戏响应。</summary>
+        public event Action<LeaveGameAck> OnLeaveGameAck;
+
+        /// <summary>实体进入视野。</summary>
+        public event Action<EntityEnterView> OnEntityEnterView;
+
+        /// <summary>实体离开视野。</summary>
+        public event Action<EntityLeaveView> OnEntityLeaveView;
+
+        /// <summary>实体移动广播。</summary>
+        public event Action<EntityMoveBroadcast> OnEntityMoveBroadcast;
+
+        /// <summary>背包同步。</summary>
+        public event Action<InventorySync> OnInventorySync;
+
+        // ==================== 状态属性 ====================
+
+        /// <summary>是否已连接服务器。</summary>
+        public bool IsConnected => _client != null && _client.IsConnected;
+
+        /// <summary>当前会话密钥（登录成功后由服务端下发）。</summary>
+        public string SessionKey => _client?.SessionKey;
+
+        /// <summary>当前账号 ID。</summary>
+        public long AccountId { get; private set; }
+
+        /// <summary>当前服务器 ID。</summary>
+        public int ServerId { get; private set; }
+
+        /// <summary>当前角色 ID。</summary>
+        public long RoleId { get; private set; }
+
+        /// <summary>是否已进入游戏。</summary>
+        public bool IsInGame { get; private set; }
+
+        // ==================== Unity 生命周期 ====================
+
+        /// <summary>初始化单例、创建 TCP 客户端、注册消息处理器。</summary>
+        private void Awake()
+        {
+            if (Instance != null && Instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+
+            Instance = this;
+
+            // 在主线程提前初始化 MainThreadDispatcher，避免子线程访问时创建 GameObject 报错
+            _ = UnityMainThreadDispatcher.Instance;
+
+            CreateTcpClient();
+            RegisterHandlers();
+        }
+
+        /// <summary>销毁时清理单例引用与连接。</summary>
+        private void OnDestroy()
+        {
+            if (Instance == this)
+                Instance = null;
+
+            if (_client != null)
+                _client.Disconnect(silent: true);
+        }
+
+        private void OnApplicationQuit()
+        {
+            if (IsInGame)
+                LeaveGame();
+
+            if (_client != null)
+                _client.Disconnect(silent: true);
+        }
+
+        // ==================== 初始化 ====================
+
+        /// <summary>创建 TCP 客户端子组件并绑定事件回调。</summary>
+        private void CreateTcpClient()
+        {
+            _client = gameObject.AddComponent<TcpNetworkClient>();
+            _client.OnMessageReceived += HandleMessageReceived;
+            _client.OnConnected += () => OnConnected?.Invoke();
+            _client.OnConnectFailed += reason => OnConnectFailed?.Invoke(reason);
+            _client.OnDisconnected += reason => OnDisconnected?.Invoke(reason);
+        }
+
+        /// <summary>注册所有协议消息的处理器，将字节流反序列化为强类型消息后触发事件。</summary>
+        private void RegisterHandlers()
+        {
+            _dispatcher.Register<LoginAck>(MsgId.LOGIN_ACK,
+                msg => HandleLoginAck(msg), LoginAck.Deserialize);
+            _dispatcher.Register<ServerListAck>(MsgId.SERVER_LIST_ACK,
+                msg => OnServerListAck?.Invoke(msg), ServerListAck.Deserialize);
+            _dispatcher.Register<RoleListAck>(MsgId.ROLE_LIST_ACK,
+                msg => OnRoleListAck?.Invoke(msg), RoleListAck.Deserialize);
+            _dispatcher.Register<CreateRoleAck>(MsgId.CREATE_ROLE_ACK,
+                msg => OnCreateRoleAck?.Invoke(msg), CreateRoleAck.Deserialize);
+            _dispatcher.Register<EnterGameAck>(MsgId.ENTER_GAME_ACK,
+                msg => HandleEnterGameAck(msg), EnterGameAck.Deserialize);
+            _dispatcher.Register<LeaveGameAck>(MsgId.LEAVE_GAME_ACK,
+                msg => HandleLeaveGameAck(msg), LeaveGameAck.Deserialize);
+            _dispatcher.Register<EntityEnterView>(MsgId.ENTITY_ENTER_VIEW,
+                msg => OnEntityEnterView?.Invoke(msg), EntityEnterView.Deserialize);
+            _dispatcher.Register<EntityLeaveView>(MsgId.ENTITY_LEAVE_VIEW,
+                msg => OnEntityLeaveView?.Invoke(msg), EntityLeaveView.Deserialize);
+            _dispatcher.Register<EntityMoveBroadcast>(MsgId.ENTITY_MOVE_BROADCAST,
+                msg => OnEntityMoveBroadcast?.Invoke(msg), EntityMoveBroadcast.Deserialize);
+            _dispatcher.Register<InventorySync>(MsgId.INVENTORY_SYNC,
+                msg => OnInventorySync?.Invoke(msg), InventorySync.Deserialize);
+            _dispatcher.Register<HeartbeatAck>(MsgId.HEARTBEAT_ACK,
+                msg => { /* 心跳响应已由 TcpNetworkClient 处理 serverTime */ }, HeartbeatAck.Deserialize);
+        }
+
+        /// <summary>TCP 消息回调：将消息派发到 <see cref="MessageDispatcher"/>。</summary>
+        private void HandleMessageReceived(int msgId, byte[] payload)
+        {
+            _dispatcher.Dispatch(msgId, payload);
+        }
+
+        // ==================== 连接 API ====================
+
+        /// <summary>异步连接服务器。</summary>
+        /// <param name="host">服务器地址。</param>
+        /// <param name="port">服务器端口。</param>
+        public void Connect(string host, int port)
+        {
+            Debug.Log($"[Network] 正在连接服务器 {host}:{port}");
+            if (_client == null)
+                CreateTcpClient();
+
+            _client.Connect(host, port);
+        }
+
+        /// <summary>断开连接并重置游戏内状态。</summary>
+        public void Disconnect()
+        {
+            Debug.Log("[Network] 主动断开连接");
+            if (_client != null)
+                _client.Disconnect();
+            IsInGame = false;
+        }
+
+        // ==================== 登录流程 API ====================
+
+        /// <summary>发送登录请求。</summary>
+        /// <param name="account">账号。</param>
+        /// <param name="password">密码。</param>
+        /// <param name="clientVersion">客户端版本号。</param>
+        /// <param name="platform">平台标识（1=PC）。</param>
+        public void Login(string account, string password, string clientVersion = "1.0.0", int platform = 1)
+        {
+            Debug.Log($"[Network] 发送登录请求: account={account}, version={clientVersion}, platform={platform}");
+            var req = new LoginReq
+            {
+                account = account,
+                password = password,
+                clientVersion = clientVersion,
+                platform = platform
+            };
+            _client.Send(MsgId.LOGIN_REQ, req.Serialize());
+        }
+
+        /// <summary>请求服务器列表。</summary>
+        /// <param name="platform">平台标识。</param>
+        public void RequestServerList(int platform = 1)
+        {
+            var req = new ServerListReq { platform = platform };
+            _client.Send(MsgId.SERVER_LIST_REQ, req.Serialize());
+        }
+
+        /// <summary>请求角色列表。登录成功后调用。</summary>
+        /// <param name="serverId">服务器 ID。</param>
+        public void RequestRoleList(int serverId)
+        {
+            ServerId = serverId;
+            var req = new RoleListReq { serverId = serverId };
+            _client.Send(MsgId.ROLE_LIST_REQ, req.Serialize());
+        }
+
+        /// <summary>创建新角色。</summary>
+        /// <param name="serverId">服务器 ID。</param>
+        /// <param name="name">角色名。</param>
+        /// <param name="profession">职业 ID。</param>
+        public void CreateRole(int serverId, string name, int profession)
+        {
+            Debug.Log($"[Network] 发送创角请求: serverId={serverId}, name={name}, profession={profession}");
+            var req = new CreateRoleReq
+            {
+                serverId = serverId,
+                name = name,
+                profession = profession
+            };
+            _client.Send(MsgId.CREATE_ROLE_REQ, req.Serialize());
+        }
+
+        /// <summary>进入游戏。</summary>
+        /// <param name="roleId">角色 ID。</param>
+        public void EnterGame(long roleId)
+        {
+            Debug.Log($"[Network] 发送进入游戏请求: roleId={roleId}");
+            RoleId = roleId;
+            var req = new EnterGameReq { roleId = roleId };
+            _client.Send(MsgId.ENTER_GAME_REQ, req.Serialize());
+        }
+
+        /// <summary>离开游戏。</summary>
+        public void LeaveGame()
+        {
+            if (!IsInGame)
+                return;
+
+            var req = new LeaveGameReq();
+            _client.Send(MsgId.LEAVE_GAME_REQ, req.Serialize());
+        }
+
+        // ==================== 游戏内同步 API ====================
+
+        /// <summary>上报玩家移动数据。</summary>
+        /// <param name="position">当前世界坐标。</param>
+        /// <param name="direction">朝向（Yaw 角度归一化向量）。</param>
+        /// <param name="speed">当前移动速度。</param>
+        public void SendMove(Vector3 position, Vector3 direction, float speed)
+        {
+            if (!IsConnected || !IsInGame)
+                return;
+
+            var req = new MoveReq
+            {
+                position = position,
+                direction = direction,
+                speed = speed
+            };
+            _client.Send(MsgId.MOVE_REQ, req.Serialize());
+        }
+
+        // ==================== 内部处理 ====================
+
+        /// <summary>处理登录响应：记录账号 ID 与会话密钥，再通知 UI 层。</summary>
+        private void HandleLoginAck(LoginAck msg)
+        {
+            if (msg.code == ErrorCode.SUCCESS)
+            {
+                AccountId = msg.accountId;
+                if (_client != null)
+                    _client.SessionKey = msg.sessionKey;
+                Debug.Log($"[Network] 登录成功: accountId={msg.accountId}, sessionKey长度={msg.sessionKey?.Length ?? 0}");
+            }
+            else
+            {
+                Debug.LogWarning($"[Network] 登录失败: code={msg.code}, desc={ErrorCode.Describe(msg.code)}");
+            }
+
+            OnLoginAck?.Invoke(msg);
+        }
+
+        /// <summary>处理进入游戏响应：标记已进入游戏状态。</summary>
+        private void HandleEnterGameAck(EnterGameAck msg)
+        {
+            if (msg.code == ErrorCode.SUCCESS)
+            {
+                IsInGame = true;
+                if (msg.player != null)
+                    RoleId = msg.player.roleId;
+                Debug.Log($"[Network] 进入游戏成功: roleId={msg.player?.roleId}, pos={msg.player?.position}, dir={msg.player?.direction}");
+            }
+            else
+            {
+                Debug.LogWarning($"[Network] 进入游戏失败: code={msg.code}, desc={ErrorCode.Describe(msg.code)}");
+            }
+
+            OnEnterGameAck?.Invoke(msg);
+        }
+
+        /// <summary>处理离开游戏响应：重置状态。</summary>
+        private void HandleLeaveGameAck(LeaveGameAck msg)
+        {
+            IsInGame = false;
+            OnLeaveGameAck?.Invoke(msg);
+        }
+    }
+}

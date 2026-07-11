@@ -1,0 +1,21 @@
+# Unity generated
+Library/
+Logs/
+Temp/
+obj/
+*.csproj
+*.sln
+
+# IDE
+.idea/
+.vscode/
+
+# Unity local settings
+UserSettings/
+
+# Sub-repos (separate GitHub repos)
+mmo-server/
+config_util/
+
+# Server (empty)
+Server/

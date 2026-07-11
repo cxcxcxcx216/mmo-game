@@ -1,0 +1,130 @@
+[
+  {
+    "id": 0,
+    "name": "空气",
+    "category": "Transparent",
+    "hardness": 0.0,
+    "transparent": true,
+    "color": "#00000000"
+  },
+  {
+    "id": 1,
+    "name": "草地",
+    "category": "Solid",
+    "hardness": 1.0,
+    "transparent": false,
+    "color": "#7CB342"
+  },
+  {
+    "id": 2,
+    "name": "泥土",
+    "category": "Solid",
+    "hardness": 1.0,
+    "transparent": false,
+    "color": "#8D6E63"
+  },
+  {
+    "id": 3,
+    "name": "石头",
+    "category": "Solid",
+    "hardness": 3.0,
+    "transparent": false,
+    "color": "#9E9E9E"
+  },
+  {
+    "id": 4,
+    "name": "圆石",
+    "category": "Solid",
+    "hardness": 4.0,
+    "transparent": false,
+    "color": "#757575"
+  },
+  {
+    "id": 5,
+    "name": "木板",
+    "category": "Solid",
+    "hardness": 2.0,
+    "transparent": false,
+    "color": "#BCAAA4"
+  },
+  {
+    "id": 6,
+    "name": "原木",
+    "category": "Solid",
+    "hardness": 2.0,
+    "transparent": false,
+    "color": "#6D4C41"
+  },
+  {
+    "id": 7,
+    "name": "沙子",
+    "category": "Solid",
+    "hardness": 0.8,
+    "transparent": false,
+    "color": "#FDD835"
+  },
+  {
+    "id": 8,
+    "name": "玻璃",
+    "category": "Transparent",
+    "hardness": 0.5,
+    "transparent": true,
+    "color": "#B3E5FC"
+  },
+  {
+    "id": 9,
+    "name": "树叶",
+    "category": "Transparent",
+    "hardness": 0.3,
+    "transparent": true,
+    "color": "#558B2F"
+  },
+  {
+    "id": 10,
+    "name": "水",
+    "category": "Fluid",
+    "hardness": 0.0,
+    "transparent": true,
+    "color": "#1E88E5"
+  },
+  {
+    "id": 11,
+    "name": "基岩",
+    "category": "Solid",
+    "hardness": 999.0,
+    "transparent": false,
+    "color": "#212121"
+  },
+  {
+    "id": 12,
+    "name": "煤矿石",
+    "category": "Solid",
+    "hardness": 4.0,
+    "transparent": false,
+    "color": "#37474F"
+  },
+  {
+    "id": 13,
+    "name": "铁矿石",
+    "category": "Solid",
+    "hardness": 5.0,
+    "transparent": false,
+    "color": "#A1887F"
+  },
+  {
+    "id": 14,
+    "name": "金矿石",
+    "category": "Solid",
+    "hardness": 5.0,
+    "transparent": false,
+    "color": "#FFD54F"
+  },
+  {
+    "id": 15,
+    "name": "钻石矿",
+    "category": "Solid",
+    "hardness": 6.0,
+    "transparent": false,
+    "color": "#4DD0E1"
+  }
+]
