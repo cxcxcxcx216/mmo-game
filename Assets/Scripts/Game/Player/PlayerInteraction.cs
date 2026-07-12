@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using Minecraft.Game.World;
 
@@ -26,6 +27,12 @@ namespace Minecraft.Game.Player
 
         /// <summary>区块管理器（注入）。若未指定，运行时自动查找。</summary>
         [SerializeField] private ChunkManager chunkManager;
+
+        /// <summary>注入区块管理器。由 GameBootstrap 在初始化时调用。</summary>
+        public void SetChunkManager(ChunkManager cm) => chunkManager = cm;
+
+        /// <summary>网络管理器（在线模式时发送方块变更到服务端）。</summary>
+        private Minecraft.MMO.NetworkManager _networkManager;
 
         // ==================== 玩家尺寸（用于放置碰撞检测）====================
 
@@ -68,6 +75,14 @@ namespace Minecraft.Game.Player
 
         /// <summary>当前选中的快捷栏槽位索引。</summary>
         private int _selectedSlot;
+
+        // ==================== 事件 ====================
+
+        /// <summary>
+        /// 快捷栏内容变化事件。参数：槽位索引、方块类型、数量。
+        /// 在 AddToInventory（拾取/堆叠）与 PlaceBlock（消耗）时触发。
+        /// </summary>
+        public event Action<int, BlockType, int> OnHotbarChanged;
 
         // ==================== 运行时状态 ====================
 
@@ -115,6 +130,8 @@ namespace Minecraft.Game.Player
             // 自动查找区块管理器
             if (chunkManager == null)
                 chunkManager = FindObjectOfType<ChunkManager>();
+
+            _networkManager = Minecraft.MMO.NetworkManager.Instance;
 
             SetupHighlight();
         }
@@ -232,6 +249,12 @@ namespace Minecraft.Game.Player
             Vector3Int pos = hit.BlockPosition;
             chunkManager.SetBlock(pos.x, pos.y, pos.z, BlockType.Air);
 
+            // 发送方块变更到服务端（在线模式）
+            if (_networkManager != null && _networkManager.IsInGame)
+            {
+                _networkManager.SendBlockChange(pos.x, pos.y, pos.z, 0); // 0 = Air
+            }
+
             // 简化处理：直接将方块加入快捷栏
             AddToInventory(brokenType);
         }
@@ -264,6 +287,15 @@ namespace Minecraft.Game.Player
             // 放置方块并消耗一个
             chunkManager.SetBlock(placePos.x, placePos.y, placePos.z, placeType);
             _hotbarCounts[_selectedSlot]--;
+
+            // 通知 UI 快捷栏数量变化
+            OnHotbarChanged?.Invoke(_selectedSlot, placeType, _hotbarCounts[_selectedSlot]);
+
+            // 发送方块变更到服务端（在线模式）
+            if (_networkManager != null && _networkManager.IsInGame)
+            {
+                _networkManager.SendBlockChange(placePos.x, placePos.y, placePos.z, (int)placeType);
+            }
         }
 
         // ==================== 背包逻辑 ====================
@@ -281,6 +313,7 @@ namespace Minecraft.Game.Player
                 if (_hotbar[i] == type && _hotbarCounts[i] > 0)
                 {
                     _hotbarCounts[i]++;
+                    OnHotbarChanged?.Invoke(i, _hotbar[i], _hotbarCounts[i]);
                     return;
                 }
             }
@@ -292,6 +325,7 @@ namespace Minecraft.Game.Player
                 {
                     _hotbar[i] = type;
                     _hotbarCounts[i] = 1;
+                    OnHotbarChanged?.Invoke(i, _hotbar[i], _hotbarCounts[i]);
                     return;
                 }
             }

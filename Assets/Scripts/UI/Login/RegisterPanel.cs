@@ -313,6 +313,19 @@ namespace Minecraft.UI
             if (_confirmPasswordInput != null) _confirmPasswordInput.text = "";
         }
 
+        /// <summary>
+        /// 面板销毁时取消所有网络事件订阅，避免 MissingReferenceException 和重复订阅。
+        /// </summary>
+        private void OnDestroy()
+        {
+            var net = NetworkManager.Instance;
+            if (net == null) return;
+            net.OnConnected -= HandleConnected;
+            net.OnConnectFailed -= HandleConnectFailed;
+            net.OnDisconnected -= HandleDisconnected;
+            net.OnLoginAck -= HandleLoginAck;
+        }
+
         private void FocusFirstInput()
         {
             if (!IsVisible || _accountInput == null) return;

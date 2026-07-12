@@ -24,6 +24,20 @@ namespace Minecraft.Game.World
         Diamond = 13,   // 钻石矿
         Planks = 14,    // 木板
         Glass = 15,     // 玻璃（透明）
+        Snow = 16,      // 雪方块（雪原地表）
+        Ice = 17,       // 冰块（半透明）
+        Cactus = 18,    // 仙人掌（沙漠）
+        FlowerRed = 19, // 红花（草地装饰，非固体）
+        FlowerYellow = 20, // 黄花（草地装饰，非固体）
+        Mushroom = 21,  // 蘑菇（丛林装饰，非固体）
+        Vine = 22,      // 藤蔓（丛林，半透明非固体）
+        JungleGrass = 23, // 丛林草（深色草地）
+        PineLog = 24,     // 松树原木（深色树干）
+        BirchLog = 25,    // 白桦原木（白色树干带黑斑）
+        PineLeaves = 26,  // 松树叶（深绿，饱满无孔洞）
+        BirchLeaves = 27, // 白桦树叶（浅黄绿，秋季感）
+        JungleLeaves = 28,// 丛林树叶（深绿大叶）
+        Cloud = 29,       // 云方块（白色半透明，天空装饰）
     }
 
     /// <summary>
@@ -33,12 +47,12 @@ namespace Minecraft.Game.World
     public static class BlockDefinition
     {
         /// <summary>所有方块定义，索引即 BlockType 的 byte 值。</summary>
-        public static readonly BlockInfo[] All = new BlockInfo[16];
+        public static readonly BlockInfo[] All = new BlockInfo[30];
 
         static BlockDefinition()
         {
             All[0] = new BlockInfo(BlockType.Air, "空气", new Color32(0, 0, 0, 0), isSolid: false, isTransparent: true);
-            All[1] = new BlockInfo(BlockType.Grass, "草方块", new Color32(95, 159, 53, 255), topColor: new Color32(120, 190, 70, 255));
+            All[1] = new BlockInfo(BlockType.Grass, "草方块", new Color32(95, 159, 53, 255), topColor: new Color32(110, 180, 65, 255));
             All[2] = new BlockInfo(BlockType.Dirt, "泥土", new Color32(134, 96, 67, 255));
             All[3] = new BlockInfo(BlockType.Stone, "石头", new Color32(128, 128, 128, 255), hardness: 5);
             All[4] = new BlockInfo(BlockType.Cobblestone, "圆石", new Color32(110, 110, 110, 255), hardness: 5);
@@ -53,6 +67,21 @@ namespace Minecraft.Game.World
             All[13] = new BlockInfo(BlockType.Diamond, "钻石矿", new Color32(100, 220, 220, 255), hardness: 7);
             All[14] = new BlockInfo(BlockType.Planks, "木板", new Color32(160, 120, 70, 255));
             All[15] = new BlockInfo(BlockType.Glass, "玻璃", new Color32(220, 240, 240, 120), isTransparent: true);
+            All[16] = new BlockInfo(BlockType.Snow, "雪方块", new Color32(235, 240, 245, 255), topColor: new Color32(245, 248, 252, 255));
+            All[17] = new BlockInfo(BlockType.Ice, "冰块", new Color32(160, 190, 225, 140), isTransparent: true);
+            All[18] = new BlockInfo(BlockType.Cactus, "仙人掌", new Color32(70, 125, 55, 255), topColor: new Color32(85, 140, 65, 255), hardness: 2);
+            All[19] = new BlockInfo(BlockType.FlowerRed, "红花", new Color32(190, 50, 50, 255), isSolid: false, isTransparent: true, hardness: 0);
+            All[20] = new BlockInfo(BlockType.FlowerYellow, "黄花", new Color32(225, 195, 55, 255), isSolid: false, isTransparent: true, hardness: 0);
+            All[21] = new BlockInfo(BlockType.Mushroom, "蘑菇", new Color32(180, 70, 55, 255), isSolid: false, isTransparent: true, hardness: 0);
+            All[22] = new BlockInfo(BlockType.Vine, "藤蔓", new Color32(55, 100, 40, 170), isSolid: false, isTransparent: true, hardness: 0);
+            All[23] = new BlockInfo(BlockType.JungleGrass, "丛林草", new Color32(55, 105, 40, 255), topColor: new Color32(70, 135, 45, 255));
+            // 新增树种专属方块
+            All[24] = new BlockInfo(BlockType.PineLog, "松树原木", new Color32(60, 45, 30, 255), topColor: new Color32(90, 65, 40, 255));
+            All[25] = new BlockInfo(BlockType.BirchLog, "白桦原木", new Color32(225, 225, 220, 255), topColor: new Color32(210, 210, 200, 255));
+            All[26] = new BlockInfo(BlockType.PineLeaves, "松树叶", new Color32(34, 90, 40, 255), isTransparent: true);
+            All[27] = new BlockInfo(BlockType.BirchLeaves, "白桦树叶", new Color32(150, 180, 70, 255), isTransparent: true);
+            All[28] = new BlockInfo(BlockType.JungleLeaves, "丛林树叶", new Color32(40, 100, 35, 255), isTransparent: true);
+            All[29] = new BlockInfo(BlockType.Cloud, "云", new Color32(255, 255, 255, 180), isSolid: false, isTransparent: true, hardness: 0);
         }
 
         /// <summary>获取指定方块类型的定义。</summary>

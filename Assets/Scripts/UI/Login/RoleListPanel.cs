@@ -52,6 +52,18 @@ namespace Minecraft.UI
                 SetStatus("正在加载角色列表...", false);
         }
 
+        /// <summary>
+        /// 面板销毁时取消所有网络事件订阅，避免 MissingReferenceException 和重复订阅。
+        /// </summary>
+        private void OnDestroy()
+        {
+            var net = NetworkManager.Instance;
+            if (net == null) return;
+            net.OnRoleListAck -= HandleRoleListAck;
+            net.OnCreateRoleAck -= HandleCreateRoleAck;
+            net.OnEnterGameAck -= HandleEnterGameAck;
+        }
+
         // ==================== UI 构建 ====================
 
         private void CreateRoleCard()

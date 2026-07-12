@@ -29,6 +29,8 @@ namespace MMO.Protocol
         public const int ENTITY_DESPAWN = 2009;
         public const int LEAVE_GAME_REQ = 2010;
         public const int LEAVE_GAME_ACK = 2011;
+        public const int BLOCK_CHANGE_REQ = 2012;
+        public const int BLOCK_CHANGE_BROADCAST = 2013;
 
         // ---- 扩展段 2050-2099 ----
         public const int MOVE_ACK = 2050;

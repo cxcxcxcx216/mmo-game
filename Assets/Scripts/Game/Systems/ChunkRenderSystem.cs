@@ -25,11 +25,26 @@ namespace Minecraft.Game.Systems
         private readonly Dictionary<(int cx, int cz), ChunkRenderData> _renderData =
             new Dictionary<(int cx, int cz), ChunkRenderData>();
 
+        /// <summary>清理已卸载区块时复用的待移除键列表（避免每帧 new List 分配）。</summary>
+        private readonly List<(int cx, int cz)> _cleanupList = new List<(int cx, int cz)>();
+
         /// <summary>固体方块共享材质（缓存）。</summary>
         private Material _solidMaterial;
 
         /// <summary>透明方块共享材质（缓存）。</summary>
         private Material _transparentMaterial;
+
+        /// <summary>草丛 Cross 模型预制体（Minecraft 风格的 X 形交叉面片）。</summary>
+        private GameObject _grassPrefab;
+
+        /// <summary>红花 Cross 模型预制体。</summary>
+        private GameObject _flowerRedPrefab;
+
+        /// <summary>黄花 Cross 模型预制体。</summary>
+        private GameObject _flowerYellowPrefab;
+
+        /// <summary>植被生成概率（每个草地地表方块，参考 Minecraft 约 8%）。</summary>
+        private const float VegetationChance = 0.08f;
 
         /// <summary>区块管理器（支持运行时注入）。</summary>
         public ChunkManager ChunkManager
@@ -119,25 +134,31 @@ namespace Minecraft.Game.Systems
                 _solidMaterial = CreateSolidMaterial();
             if (_transparentMaterial == null)
                 _transparentMaterial = CreateTransparentMaterial();
+            if (_grassPrefab == null)
+                _grassPrefab = Resources.Load<GameObject>("Prefabs/GrassCross");
+            if (_flowerRedPrefab == null)
+                _flowerRedPrefab = Resources.Load<GameObject>("Prefabs/FlowerRedCross");
+            if (_flowerYellowPrefab == null)
+                _flowerYellowPrefab = Resources.Load<GameObject>("Prefabs/FlowerYellowCross");
         }
 
         /// <summary>销毁已不在 ChunkManager 中的区块渲染对象。</summary>
         private void CleanupUnloadedChunks()
         {
-            // 先收集待移除的键，避免在遍历字典时修改字典
-            var toRemove = new List<(int cx, int cz)>();
+            // 复用类成员列表，避免每帧 new List 造成 GC 分配
+            _cleanupList.Clear();
             foreach (var kvp in _renderData)
             {
                 if (!_chunkManager.HasChunk(kvp.Key.cx, kvp.Key.cz))
-                    toRemove.Add(kvp.Key);
+                    _cleanupList.Add(kvp.Key);
             }
 
-            for (int i = 0; i < toRemove.Count; i++)
+            for (int i = 0; i < _cleanupList.Count; i++)
             {
-                if (_renderData.TryGetValue(toRemove[i], out ChunkRenderData data))
+                if (_renderData.TryGetValue(_cleanupList[i], out ChunkRenderData data))
                 {
                     DestroyRenderData(data);
-                    _renderData.Remove(toRemove[i]);
+                    _renderData.Remove(_cleanupList[i]);
                 }
             }
         }
@@ -213,6 +234,87 @@ namespace Minecraft.Game.Systems
                 if (data.TransparentGameObject != null && data.TransparentGameObject.activeSelf)
                     data.TransparentGameObject.SetActive(false);
             }
+
+            // 首次构建后生成植被预制体（草丛/花，Minecraft 风格 Cross 模型）
+            if (!data.VegetationSpawned)
+                SpawnVegetation(data, chunk);
+        }
+
+        /// <summary>
+        /// 在区块的草地地表上生成植被预制体（Minecraft 风格 Cross 模型）。
+        /// 仅在首次构建时生成一次；每列从上往下找首个非空气方块，若是草地且上方为空气，
+        /// 按 <see cref="VegetationChance"/> 概率放置草丛/花。位置为方块上方气块中心。
+        /// </summary>
+        private void SpawnVegetation(ChunkRenderData data, Chunk chunk)
+        {
+            // 预制体任一缺失则跳过（避免半生成状态）
+            if (_grassPrefab == null || _flowerRedPrefab == null || _flowerYellowPrefab == null)
+            {
+                data.VegetationSpawned = true; // 标记已尝试，避免每帧重试
+                return;
+            }
+            data.VegetationSpawned = true;
+
+            int worldOriginX = chunk.ChunkX * Chunk.Width;
+            int worldOriginZ = chunk.ChunkZ * Chunk.Depth;
+            // 确定性随机：与区块坐标绑定，保证同一区块每次生成相同植被
+            var rng = new System.Random(chunk.ChunkX * 73856093 ^ chunk.ChunkZ * 19349663 ^ 48271);
+
+            var instances = new List<GameObject>();
+
+            for (int x = 0; x < Chunk.Width; x++)
+            {
+                for (int z = 0; z < Chunk.Depth; z++)
+                {
+                    // 从上往下找首个非空气方块（即地表方块）
+                    for (int y = Chunk.Height - 1; y >= 0; y--)
+                    {
+                        BlockType b = chunk.GetBlock(x, y, z);
+                        if (b == BlockType.Air)
+                            continue;
+
+                        // 仅在草地/丛林草地上生成植被
+                        if (b != BlockType.Grass && b != BlockType.JungleGrass)
+                            break;
+
+                        // 上方必须为空气（确保植被露在表面）
+                        if (y + 1 >= Chunk.Height || chunk.GetBlock(x, y + 1, z) != BlockType.Air)
+                            break;
+
+                        if (rng.NextDouble() >= VegetationChance)
+                            break;
+
+                        GameObject prefab = PickVegetationPrefab(rng);
+                        if (prefab == null)
+                            break;
+
+                        // 位置：方块上方气块中心（方块中心 = wx+0.5, y+0.5, wz+0.5）
+                        var pos = new Vector3(
+                            worldOriginX + x + 0.5f,
+                            y + 1.5f,
+                            worldOriginZ + z + 0.5f);
+                        GameObject go = Instantiate(prefab, pos, Quaternion.identity, data.GameObject.transform);
+                        // 固定朝向：场景必须确定性，所有植被统一朝向（Y 旋转 0°）
+                        instances.Add(go);
+                        break;
+                    }
+                }
+            }
+
+            data.VegetationInstances = instances;
+        }
+
+        /// <summary>
+        /// 按权重选择植被预制体：草丛 70%、红花 15%、黄花 15%。
+        /// </summary>
+        private GameObject PickVegetationPrefab(System.Random rng)
+        {
+            double r = rng.NextDouble();
+            if (r < 0.70)
+                return _grassPrefab;
+            if (r < 0.85)
+                return _flowerRedPrefab;
+            return _flowerYellowPrefab;
         }
 
         /// <summary>确保透明渲染子物体存在并激活（按需创建，复用以减少分配）。</summary>
@@ -239,7 +341,7 @@ namespace Minecraft.Game.Systems
             }
         }
 
-        /// <summary>销毁渲染对象关联的 GameObject 与 Mesh（父物体会连带销毁透明子物体）。</summary>
+        /// <summary>销毁渲染对象关联的 GameObject 与 Mesh（父物体会连带销毁透明子物体与植被实例）。</summary>
         private void DestroyRenderData(ChunkRenderData data)
         {
             if (data.GameObject != null)
@@ -248,6 +350,8 @@ namespace Minecraft.Game.Systems
                 Destroy(data.SolidMesh);
             if (data.TransparentMesh != null)
                 Destroy(data.TransparentMesh);
+            // 父 GameObject 销毁时已连带销毁子物体（含植被），此处仅清空引用
+            data.VegetationInstances = null;
         }
 
         // ==================== 材质创建 ====================
@@ -264,6 +368,10 @@ namespace Minecraft.Game.Systems
             mat.name = "Chunk_Solid";
             mat.mainTexture = atlas;
             mat.color = Color.white;
+
+            // 方块世界使用漫反射材质：无金属感、无光泽，避免异常反光
+            mat.SetFloat("_Metallic", 0f);
+            mat.SetFloat("_Glossiness", 0f);
 
             // 固体方块使用不透明渲染模式
             mat.SetInt("_Mode", 0);
@@ -299,6 +407,8 @@ namespace Minecraft.Game.Systems
             mat.enableInstancing = true;
 
             mat.SetInt("_Mode", 3);
+            mat.SetFloat("_Metallic", 0f);
+            mat.SetFloat("_Glossiness", 0f);
             mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
             mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
             mat.SetInt("_ZWrite", 0);
@@ -343,6 +453,12 @@ namespace Minecraft.Game.Systems
 
             /// <summary>是否需要重建 Mesh（用于每帧限流）。</summary>
             public bool NeedsRebuild;
+
+            /// <summary>是否已生成植被预制体（草丛等 Cross 模型装饰，仅首次生成）。</summary>
+            public bool VegetationSpawned;
+
+            /// <summary>已生成的植被预制体实例列表（区块卸载时由父物体连带销毁，此处仅持有引用便于扩展）。</summary>
+            public List<GameObject> VegetationInstances;
         }
     }
 }

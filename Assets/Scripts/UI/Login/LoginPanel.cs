@@ -325,6 +325,20 @@ namespace Minecraft.UI
             CancelInvoke();
         }
 
+        /// <summary>
+        /// 面板销毁时取消所有网络事件订阅，避免 MissingReferenceException 和重复订阅。
+        /// NetworkManager 是跨场景持久化单例，不随面板销毁而释放引用。
+        /// </summary>
+        private void OnDestroy()
+        {
+            var net = NetworkManager.Instance;
+            if (net == null) return;
+            net.OnConnected -= HandleConnected;
+            net.OnConnectFailed -= HandleConnectFailed;
+            net.OnDisconnected -= HandleDisconnected;
+            net.OnLoginAck -= HandleLoginAck;
+        }
+
         private void FocusFirstInput()
         {
             if (!IsVisible || _accountInput == null) return;

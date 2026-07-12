@@ -30,16 +30,22 @@ namespace Minecraft.UI
         /// <summary>FPS 刷新间隔（秒）。</summary>
         private const float FpsUpdateInterval = 0.5f;
 
+        /// <summary>玩家引用兜底查找的重试间隔（秒），避免每帧全场景遍历。</summary>
+        private const float FindRetryInterval = 0.5f;
+
         // ==================== 运行时状态 ====================
 
         /// <summary>信息文本组件。</summary>
         private Text _infoText;
 
-        /// <summary>玩家控制器（懒加载）。</summary>
+        /// <summary>玩家控制器（懒加载，可由 GameBootstrap 主动注入）。</summary>
         private PlayerController _player;
 
-        /// <summary>玩家交互（懒加载，用于获取当前选中方块）。</summary>
+        /// <summary>玩家交互（懒加载，用于获取当前选中方块，可由 GameBootstrap 主动注入）。</summary>
         private PlayerInteraction _interaction;
+
+        /// <summary>玩家引用兜底查找的计时器（节流用）。</summary>
+        private float _findRetryTimer;
 
         /// <summary>FPS 累计时间。</summary>
         private float _fpsAccumTime;
@@ -68,18 +74,40 @@ namespace Minecraft.UI
 
         // ==================== Unity 生命周期 ====================
 
-        /// <summary>每帧更新：懒加载玩家、统计 FPS、刷新信息文本。</summary>
+        /// <summary>每帧更新：懒加载玩家（节流兜底）、统计 FPS、刷新信息文本。</summary>
         private void Update()
         {
-            // 懒加载查找玩家（玩家可能在 HUD 之后创建）
+            // 兜底查找玩家：仅当未注入且计时器到达间隔时才尝试，避免每帧全场景遍历
             if (_player == null)
             {
-                _player = FindObjectOfType<PlayerController>();
-                _interaction = FindObjectOfType<PlayerInteraction>();
+                _findRetryTimer += Time.unscaledDeltaTime;
+                if (_findRetryTimer >= FindRetryInterval)
+                {
+                    _findRetryTimer = 0f;
+                    _player = FindObjectOfType<PlayerController>();
+                    _interaction = FindObjectOfType<PlayerInteraction>();
+                }
             }
 
             UpdateFps();
             UpdateInfo();
+        }
+
+        // ==================== 外部注入 ====================
+
+        /// <summary>主动注入玩家控制器，避免每帧 FindObjectOfType 全场景遍历。</summary>
+        /// <param name="player">玩家控制器引用。</param>
+        public void SetPlayer(PlayerController player)
+        {
+            _player = player;
+            _findRetryTimer = 0f;
+        }
+
+        /// <summary>主动注入玩家交互组件，避免每帧 FindObjectOfType 全场景遍历。</summary>
+        /// <param name="interaction">玩家交互组件引用。</param>
+        public void SetInteraction(PlayerInteraction interaction)
+        {
+            _interaction = interaction;
         }
 
         // ==================== UI 构建 ====================

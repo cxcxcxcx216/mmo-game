@@ -13,12 +13,12 @@ namespace Minecraft.Game.Systems
     /// 处理的消息：
     /// - <see cref="MsgId.ENTITY_ENTER_VIEW"/>：实体进入视野，创建 <see cref="RemotePlayerEntity"/>。
     /// - <see cref="MsgId.ENTITY_LEAVE_VIEW"/>：实体离开视野，销毁对应渲染对象。
-    /// - <see cref="MsgId.ENTITY_MOVE_BROADCAST"/>：实体移动，更新目标位置与朝向。
+    /// - <see cref="MsgId.ENTITY_MOVE_BROADCAST"/>：实体移动，更新目标位置、朝向与速度。
     /// </para>
     /// <para>
     /// 设计要点：
     /// 1. 普通 <see cref="MonoBehaviour"/>，事件驱动，无需每帧轮询。
-    /// 2. 远程实体使用不同颜色区分，颜色基于实体 ID 哈希生成。
+    /// 2. NPC 固定绿色 + "[NPC]" 名牌前缀 + 0.9 倍缩放；玩家颜色基于实体 ID 哈希生成。
     /// 3. 离开游戏时自动清理所有远程实体。
     /// </para>
     /// </summary>
@@ -114,28 +114,24 @@ namespace Minecraft.Game.Systems
             // 已存在则更新（避免重复创建）
             if (_entities.TryGetValue(entityId, out var existing))
             {
-                existing.UpdateTarget(msg.entity.position, GetYawFromDirection(msg.entity.direction));
+                existing.UpdateTarget(msg.entity.position, GetYawFromDirection(msg.entity.direction), msg.entity.speed);
                 return;
             }
 
-            // 创建新实体
-            var go = new GameObject($"RemotePlayer_{entityId}");
+            // NPC 与玩家统一创建流程，仅颜色 / 标记不同
+            bool isNpc = msg.entity.type == EntityType.NPC;
+            Color bodyColor = isNpc ? new Color(0.3f, 0.8f, 0.3f) : GenerateColorFromId(entityId);
+            float yaw = GetYawFromDirection(msg.entity.direction);
+
+            var go = new GameObject($"Remote_{msg.entity.type}_{entityId}");
             go.transform.SetParent(_root, false);
 
             var entity = go.AddComponent<RemotePlayerEntity>();
-            Color bodyColor = GenerateColorFromId(entityId);
-            float yaw = GetYawFromDirection(msg.entity.direction);
-
-            entity.Initialize(
-                entityId,
-                msg.entity.name,
-                msg.entity.position,
-                yaw,
-                bodyColor);
+            entity.Initialize(entityId, msg.entity.name, msg.entity.position, yaw, msg.entity.speed, bodyColor, isNpc);
 
             _entities[entityId] = entity;
 
-            Debug.Log($"[RemoteEntity] 实体进入视野: {msg.entity.name} (id={entityId}) at {msg.entity.position}");
+            Debug.Log($"[RemoteEntity] 实体进入视野: {msg.entity.name} (id={entityId}, type={msg.entity.type}) at {msg.entity.position}");
         }
 
         /// <summary>实体离开视野：销毁远程实体渲染对象。</summary>
@@ -162,7 +158,7 @@ namespace Minecraft.Game.Systems
             if (_entities.TryGetValue(msg.entityId, out var entity))
             {
                 float yaw = GetYawFromDirection(msg.direction);
-                entity.UpdateTarget(msg.position, yaw);
+                entity.UpdateTarget(msg.position, yaw, msg.speed);
             }
         }
 

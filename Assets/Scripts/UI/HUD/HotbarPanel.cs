@@ -1,13 +1,15 @@
+using System;
 using UnityEngine;
 using UnityEngine.UI;
+using Minecraft.Game.Player;
 using Minecraft.Game.World;
 
 namespace Minecraft.UI
 {
     /// <summary>
     /// 快捷栏面板（Minecraft 风格底部快捷栏）。
-    /// 底部居中显示 9 个格子，对应数字键 1~9。每格 50×50，间距 4 像素。
-    /// 选中格有白色边框高亮；格内显示方块图标（纯色块，颜色取自 <see cref="BlockDefinition"/>.SideColor）
+    /// 底部居中显示 9 个格子，对应数字键 1~9。每格 56×56，间距 6 像素。
+    /// 选中格有翡翠绿边框高亮；格内显示方块纹理图标（取自 TextureAtlasGenerator）
     /// 与左上角数字编号。
     /// <para>本面板仅负责显示；按键选择由 <see cref="Game.Player.PlayerInteraction"/> 处理。</para>
     /// </summary>
@@ -47,6 +49,9 @@ namespace Minecraft.UI
         /// <summary>当前选中的槽位索引。</summary>
         private int _selectedSlot;
 
+        /// <summary>玩家交互组件引用（用于订阅快捷栏变化事件）。</summary>
+        private PlayerInteraction _playerInteraction;
+
         // ==================== 公开属性 ====================
 
         /// <summary>当前选中方块类型。</summary>
@@ -65,6 +70,56 @@ namespace Minecraft.UI
                 Stretch(selfRect);
 
             CreateHotbar();
+
+            // 兜底查找 PlayerInteraction 并订阅事件（GameBootstrap 可通过 SetPlayerInteraction 注入）
+            if (_playerInteraction == null)
+                _playerInteraction = FindObjectOfType<PlayerInteraction>();
+            BindHotbarChanged();
+        }
+
+        /// <summary>主动注入玩家交互组件，避免 FindObjectOfType 全场景遍历。</summary>
+        /// <param name="interaction">玩家交互组件引用。</param>
+        public void SetPlayerInteraction(PlayerInteraction interaction)
+        {
+            // 若已有引用，先解绑旧的事件订阅
+            if (_playerInteraction != null)
+                _playerInteraction.OnHotbarChanged -= HandleHotbarChanged;
+
+            _playerInteraction = interaction;
+            BindHotbarChanged();
+        }
+
+        /// <summary>订阅 PlayerInteraction.OnHotbarChanged 事件。</summary>
+        private void BindHotbarChanged()
+        {
+            if (_playerInteraction == null)
+                return;
+
+            _playerInteraction.OnHotbarChanged -= HandleHotbarChanged;
+            _playerInteraction.OnHotbarChanged += HandleHotbarChanged;
+        }
+
+        /// <summary>Unity 销毁回调：取消事件订阅，防止内存泄漏。</summary>
+        private void OnDestroy()
+        {
+            if (_playerInteraction != null)
+                _playerInteraction.OnHotbarChanged -= HandleHotbarChanged;
+        }
+
+        /// <summary>
+        /// 处理快捷栏内容变化：更新对应槽位的图标显示。
+        /// 数量为 0 时清空该格显示。
+        /// </summary>
+        /// <param name="slot">槽位索引。</param>
+        /// <param name="type">方块类型。</param>
+        /// <param name="count">数量。</param>
+        private void HandleHotbarChanged(int slot, BlockType type, int count)
+        {
+            if (slot < 0 || slot >= SlotCount)
+                return;
+
+            // 数量耗尽时显示为空，否则显示对应方块图标
+            SetSlot(slot, count <= 0 ? BlockType.Air : type);
         }
 
         // ==================== 公开方法 ====================
@@ -88,11 +143,14 @@ namespace Minecraft.UI
             if (type == BlockType.Air)
             {
                 icon.color = Color.clear;
+                icon.sprite = null;
             }
             else
             {
-                // 颜色取自方块的侧面色
-                icon.color = BlockDefinition.Get(type).SideColor;
+                // 使用纹理图集中的真实方块纹理，替代纯色块
+                icon.sprite = TextureAtlasGenerator.GetBlockSprite(type);
+                icon.color = Color.white;
+                icon.preserveAspect = true;
             }
         }
 

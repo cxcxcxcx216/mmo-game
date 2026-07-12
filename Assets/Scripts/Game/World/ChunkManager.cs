@@ -25,6 +25,9 @@ namespace Minecraft.Game.World
         /// <summary>渲染半径（单位：区块）。</summary>
         public int RenderRadius => _renderRadius;
 
+        /// <summary>设置渲染半径（单位：区块）。由 GameBootstrap 在初始化时调用。</summary>
+        public void SetRenderRadius(int radius) => _renderRadius = radius;
+
         /// <summary>当前已加载的区块数量。</summary>
         public int LoadedChunkCount => _chunks.Count;
 

@@ -38,7 +38,7 @@ namespace Minecraft.Bootstrap
 
         [Header("世界配置")]
         [SerializeField] private int terrainSeed = 1337;
-        [SerializeField] private int renderRadius = 6;
+        [SerializeField] private int renderRadius = 10;
 
         // ==================== 管理器引用 ====================
 
@@ -301,6 +301,13 @@ namespace Minecraft.Bootstrap
             if (_remoteEntityManager != null)
                 _remoteEntityManager.StopListening();
 
+            // 取消订阅方块变更广播
+            var net = NetworkManager.Instance;
+            if (net != null)
+            {
+                net.OnBlockChangeBroadcast -= HandleBlockChangeBroadcast;
+            }
+
             // 清理子对象（ChunkManager/Player/Systems/UI 都挂在 GameBootstrap 下）
             string[] childNames = { "[ChunkManager]", "[Player]", "[WorldUpdater]",
                 "[Camera]", "HudPanel", "HotbarPanel", "InventoryPanel" };
@@ -312,12 +319,28 @@ namespace Minecraft.Bootstrap
                     Destroy(found.gameObject);
             }
 
-            // 清理所有 Chunk_ 开头的对象
-            var chunkObjects = FindObjectsOfType<GameObject>();
-            for (int i = 0; i < chunkObjects.Length; i++)
+            // 清理所有 Chunk_ 开头的对象（优先通过 ChunkRenderSystem 的 transform 遍历子物体）
+            if (_chunkRenderSystem != null)
             {
-                if (chunkObjects[i].name.StartsWith("Chunk_"))
-                    Destroy(chunkObjects[i]);
+                var renderTransform = _chunkRenderSystem.transform;
+                int childCount = renderTransform.childCount;
+                // 倒序遍历，避免销毁后索引错位
+                for (int i = childCount - 1; i >= 0; i--)
+                {
+                    Transform child = renderTransform.GetChild(i);
+                    if (child.name.StartsWith("Chunk_"))
+                        Destroy(child.gameObject);
+                }
+            }
+            else
+            {
+                Debug.LogWarning("[GameBootstrap] ChunkRenderSystem 引用不可用，回退到全场景遍历清理 Chunk_ 对象");
+                var chunkObjects = FindObjectsOfType<GameObject>();
+                for (int i = 0; i < chunkObjects.Length; i++)
+                {
+                    if (chunkObjects[i].name.StartsWith("Chunk_"))
+                        Destroy(chunkObjects[i]);
+                }
             }
 
             _playerController = null;
@@ -355,9 +378,9 @@ namespace Minecraft.Bootstrap
             // 雾效：远处方块淡入天空色，隐藏渲染边界
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.Linear;
-            RenderSettings.fogColor = new Color(0.62f, 0.74f, 0.88f);
-            RenderSettings.fogStartDistance = 60f;
-            RenderSettings.fogEndDistance = 180f;
+            RenderSettings.fogColor = new Color(0.68f, 0.78f, 0.92f);
+            RenderSettings.fogStartDistance = 70f;
+            RenderSettings.fogEndDistance = 200f;
 
             camGo.AddComponent<FlareLayer>();
             camGo.AddComponent<AudioListener>();
@@ -380,10 +403,10 @@ namespace Minecraft.Bootstrap
                 sunGo = new GameObject("DirectionalLight");
                 var sun = sunGo.AddComponent<Light>();
                 sun.type = LightType.Directional;
-                sun.color = new Color(1f, 0.96f, 0.88f);
-                sun.intensity = 1.3f;
+                sun.color = new Color(1f, 0.94f, 0.82f);
+                sun.intensity = 1.4f;
                 sun.shadows = LightShadows.Soft;
-                sun.shadowStrength = 0.85f;
+                sun.shadowStrength = 0.80f;
                 sun.shadowResolution = LightShadowResolution.Medium;
                 sun.shadowBias = 0.04f;
                 sun.shadowNormalBias = 0.4f;
@@ -394,11 +417,11 @@ namespace Minecraft.Bootstrap
 
             // ===== 环境光 =====
             RenderSettings.ambientMode = AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(0.45f, 0.58f, 0.72f);
-            RenderSettings.ambientEquatorColor = new Color(0.4f, 0.45f, 0.38f);
-            RenderSettings.ambientGroundColor = new Color(0.32f, 0.28f, 0.24f);
-            RenderSettings.ambientIntensity = 1.1f;
-            RenderSettings.reflectionIntensity = 1f;
+            RenderSettings.ambientSkyColor = new Color(0.52f, 0.64f, 0.78f);
+            RenderSettings.ambientEquatorColor = new Color(0.48f, 0.52f, 0.42f);
+            RenderSettings.ambientGroundColor = new Color(0.36f, 0.30f, 0.26f);
+            RenderSettings.ambientIntensity = 1.25f;
+            RenderSettings.reflectionIntensity = 1.1f;
 
             // ===== 程序化天空盒（渐变蓝色） =====
             Shader skyShader = Shader.Find("Skybox/Procedural");
@@ -406,10 +429,10 @@ namespace Minecraft.Bootstrap
             {
                 var skyMat = new Material(skyShader);
                 skyMat.name = "ProceduralSkybox";
-                skyMat.SetColor("_SunTint", new Color(1f, 0.92f, 0.7f));
-                skyMat.SetColor("_SkyTint", new Color(0.5f, 0.7f, 1f));
-                skyMat.SetFloat("_AtmosphereThickness", 1.2f);
-                skyMat.SetFloat("_Exposure", 1.1f);
+                skyMat.SetColor("_SunTint", new Color(1f, 0.88f, 0.65f));
+                skyMat.SetColor("_SkyTint", new Color(0.45f, 0.68f, 1f));
+                skyMat.SetFloat("_AtmosphereThickness", 1.3f);
+                skyMat.SetFloat("_Exposure", 1.15f);
                 RenderSettings.skybox = skyMat;
             }
         }
@@ -423,12 +446,7 @@ namespace Minecraft.Bootstrap
             chunkGo.transform.SetParent(transform);
             _chunkManager = chunkGo.AddComponent<ChunkManager>();
             _chunkManager.TerrainProvider = new TerrainGenerator(terrainSeed);
-
-            // 通过反射设置渲染半径
-            var renderField = typeof(ChunkManager).GetField("_renderRadius",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (renderField != null)
-                renderField.SetValue(_chunkManager, renderRadius);
+            _chunkManager.SetRenderRadius(renderRadius);
         }
 
         // ==================== 玩家 ====================
@@ -451,10 +469,7 @@ namespace Minecraft.Bootstrap
             _playerInteraction = playerGo.AddComponent<PlayerInteraction>();
 
             // 注入 ChunkManager
-            var cmField = typeof(PlayerInteraction).GetField("chunkManager",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (cmField != null)
-                cmField.SetValue(_playerInteraction, _chunkManager);
+            _playerInteraction.SetChunkManager(_chunkManager);
 
             // 创建玩家视觉模型（第一人称手臂 + 第三人称身体）
             CreatePlayerVisuals(playerGo);
@@ -636,6 +651,25 @@ namespace Minecraft.Bootstrap
 
             // 玩家移动同步组件（挂载到玩家对象上）
             _playerNetworkSync = _playerController.gameObject.AddComponent<PlayerNetworkSync>();
+
+            // 订阅方块变更广播（在线模式下由服务端推送其他玩家的方块修改）
+            var net = NetworkManager.Instance;
+            if (net != null)
+            {
+                net.OnBlockChangeBroadcast += HandleBlockChangeBroadcast;
+            }
+        }
+
+        /// <summary>处理服务端推送的方块变更广播：更新本地方块数据。</summary>
+        private void HandleBlockChangeBroadcast(BlockChangeBroadcast msg)
+        {
+            if (_chunkManager == null)
+                return;
+
+            // 将服务端的 blockType 映射到客户端 BlockType 枚举
+            BlockType type = (BlockType)msg.blockType;
+            _chunkManager.SetBlock(msg.x, msg.y, msg.z, type);
+            Debug.Log($"[BlockSync] 收到方块变更广播: pos=({msg.x},{msg.y},{msg.z}), type={type}");
         }
 
         // ==================== 辅助方法 ====================

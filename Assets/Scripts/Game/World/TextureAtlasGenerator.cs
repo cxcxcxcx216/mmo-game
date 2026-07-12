@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Minecraft.Game.World
@@ -47,9 +48,35 @@ namespace Minecraft.Game.World
         private const int TileGrassTop = 16;    // 草顶面
         private const int TileWoodTop = 17;     // 原木截面（年轮）
 
+        // ==================== 图块索引（第二行续：新增方块纹理）====================
+
+        private const int TileSnow = 18;            // 雪方块
+        private const int TileIce = 19;             // 冰块
+        private const int TileCactus = 20;          // 仙人掌
+        private const int TileFlowerRed = 21;       // 红花
+        private const int TileFlowerYellow = 22;    // 黄花
+        private const int TileMushroom = 23;        // 蘑菇
+        private const int TileVine = 24;            // 藤蔓
+        private const int TileJungleGrass = 25;     // 丛林草侧面
+        private const int TileJungleGrassTop = 26;  // 丛林草顶面
+
+        // ==================== 图块索引（第三行：新增树种方块纹理）====================
+
+        private const int TilePineLogSide = 27;     // 松树原木侧面
+        private const int TilePineLogTop = 28;      // 松树原木截面
+        private const int TileBirchLogSide = 29;    // 白桦原木侧面
+        private const int TileBirchLogTop = 30;     // 白桦原木截面
+        private const int TilePineLeaves = 31;      // 松树叶
+        private const int TileBirchLeaves = 32;     // 白桦树叶
+        private const int TileJungleLeaves = 33;    // 丛林树叶
+        private const int TileCloud = 34;           // 云方块
+
         // ==================== 单例缓存 ====================
 
         private static Texture2D _cachedAtlas;
+
+        /// <summary>方块 UI 图标 Sprite 缓存（按 BlockType 索引）。</summary>
+        private static readonly Dictionary<BlockType, Sprite> _spriteCache = new Dictionary<BlockType, Sprite>();
 
         // ==================== 公开方法 ====================
 
@@ -62,6 +89,27 @@ namespace Minecraft.Game.World
             if (_cachedAtlas == null)
                 _cachedAtlas = GenerateAtlas();
             return _cachedAtlas;
+        }
+
+        /// <summary>
+        /// 获取指定方块在 UI 上显示用的 Sprite（取侧面图块，带缓存）。
+        /// 用于快捷栏/背包等 UI 图标，替代纯色块。
+        /// </summary>
+        /// <param name="type">方块类型。</param>
+        /// <returns>从纹理图集裁切的 16x16 Sprite，保持像素感。</returns>
+        public static Sprite GetBlockSprite(BlockType type)
+        {
+            if (_spriteCache.TryGetValue(type, out Sprite cached))
+                return cached;
+
+            Texture2D atlas = GetAtlasTexture();
+            int tile = GetTileIndex(type, 2); // faceIndex=2 (North 侧面)
+            int baseX = (tile % TilesPerRow) * TileSize;
+            int baseY = (tile / TilesPerRow) * TileSize;
+            var rect = new Rect(baseX, baseY, TileSize, TileSize);
+            var sprite = Sprite.Create(atlas, rect, new Vector2(0.5f, 0.5f), TileSize);
+            _spriteCache[type] = sprite;
+            return sprite;
         }
 
         /// <summary>
@@ -173,6 +221,20 @@ namespace Minecraft.Game.World
                 case BlockType.Diamond:     return TileDiamond;
                 case BlockType.Planks:      return TilePlanks;
                 case BlockType.Glass:       return TileGlass;
+                case BlockType.Snow:        return TileSnow;
+                case BlockType.Ice:         return TileIce;
+                case BlockType.Cactus:      return TileCactus;
+                case BlockType.FlowerRed:   return TileFlowerRed;
+                case BlockType.FlowerYellow:return TileFlowerYellow;
+                case BlockType.Mushroom:    return TileMushroom;
+                case BlockType.Vine:        return TileVine;
+                case BlockType.JungleGrass: return faceIndex == 0 ? TileJungleGrassTop : TileJungleGrass;
+                case BlockType.PineLog:     return (faceIndex == 0 || faceIndex == 1) ? TilePineLogTop : TilePineLogSide;
+                case BlockType.BirchLog:    return (faceIndex == 0 || faceIndex == 1) ? TileBirchLogTop : TileBirchLogSide;
+                case BlockType.PineLeaves:  return TilePineLeaves;
+                case BlockType.BirchLeaves: return TileBirchLeaves;
+                case BlockType.JungleLeaves:return TileJungleLeaves;
+                case BlockType.Cloud:       return TileCloud;
                 default:                    return TileAir;
             }
         }
@@ -214,6 +276,27 @@ namespace Minecraft.Game.World
             DrawGrassTop(atlas, rng);
             DrawWoodTop(atlas, rng);
 
+            // 第二行续：新增方块纹理
+            DrawSnow(atlas, rng);
+            DrawIce(atlas, rng);
+            DrawCactus(atlas, rng);
+            DrawFlower(atlas, rng, TileFlowerRed, new Color(0.75f, 0.2f, 0.2f));
+            DrawFlower(atlas, rng, TileFlowerYellow, new Color(0.88f, 0.76f, 0.22f));
+            DrawMushroom(atlas, rng);
+            DrawVine(atlas, rng);
+            DrawJungleGrassSide(atlas, rng);
+            DrawJungleGrassTop(atlas, rng);
+
+            // 第三行：新增树种方块纹理
+            DrawPineLogSide(atlas, rng);
+            DrawPineLogTop(atlas, rng);
+            DrawBirchLogSide(atlas, rng);
+            DrawBirchLogTop(atlas, rng);
+            DrawPineLeaves(atlas, rng);
+            DrawBirchLeaves(atlas, rng);
+            DrawJungleLeaves(atlas, rng);
+            DrawCloud(atlas, rng);
+
             atlas.Apply();
             return atlas;
         }
@@ -250,10 +333,10 @@ namespace Minecraft.Game.World
 
         // ==================== 各方块纹理绘制 ====================
 
-        /// <summary>草侧面：上部草绿色，下部泥土色，边界不规则。</summary>
+        /// <summary>草侧面：上部鲜绿草色，下部泥土色，边界不规则。</summary>
         private static void DrawGrassSide(Texture2D atlas, System.Random rng)
         {
-            Color grass = new Color(0.45f, 0.65f, 0.25f);
+            Color grass = new Color(0.42f, 0.70f, 0.22f);
             Color dirt = new Color(0.55f, 0.4f, 0.25f);
 
             for (int x = 0; x < TileSize; x++)
@@ -264,18 +347,18 @@ namespace Minecraft.Game.World
                 {
                     // y=0 是底部，草在顶部（高 y 值）
                     Color c = (y >= TileSize - grassH) ? grass : dirt;
-                    SetTilePixel(atlas, TileGrass, x, y, NoiseColor(c, 0.15f, rng));
+                    SetTilePixel(atlas, TileGrass, x, y, NoiseColor(c, 0.12f, rng));
                 }
             }
         }
 
-        /// <summary>草顶面：草绿色带噪点。</summary>
+        /// <summary>草顶面：鲜绿色带噪点。</summary>
         private static void DrawGrassTop(Texture2D atlas, System.Random rng)
         {
-            Color grass = new Color(0.45f, 0.65f, 0.25f);
+            Color grass = new Color(0.42f, 0.70f, 0.22f);
             for (int x = 0; x < TileSize; x++)
                 for (int y = 0; y < TileSize; y++)
-                    SetTilePixel(atlas, TileGrassTop, x, y, NoiseColor(grass, 0.18f, rng));
+                    SetTilePixel(atlas, TileGrassTop, x, y, NoiseColor(grass, 0.15f, rng));
         }
 
         /// <summary>泥土：棕色带小石子噪点。</summary>
@@ -352,13 +435,13 @@ namespace Minecraft.Game.World
             }
         }
 
-        /// <summary>沙子：浅黄色带细沙噪点。</summary>
+        /// <summary>沙子：明亮浅黄色带细沙噪点。</summary>
         private static void DrawSand(Texture2D atlas, System.Random rng)
         {
-            Color sand = new Color(0.85f, 0.8f, 0.55f);
+            Color sand = new Color(0.90f, 0.85f, 0.60f);
             for (int x = 0; x < TileSize; x++)
                 for (int y = 0; y < TileSize; y++)
-                    SetTilePixel(atlas, TileSand, x, y, NoiseColor(sand, 0.08f, rng));
+                    SetTilePixel(atlas, TileSand, x, y, NoiseColor(sand, 0.06f, rng));
         }
 
         /// <summary>原木侧面：竖向木纹纹理。</summary>
@@ -395,31 +478,31 @@ namespace Minecraft.Game.World
                 }
         }
 
-        /// <summary>树叶：绿色叶片纹理，带透明孔洞。</summary>
+        /// <summary>树叶：绿色叶片纹理，少量透明孔洞（饱满树冠感）。</summary>
         private static void DrawLeaves(Texture2D atlas, System.Random rng)
         {
-            Color leaf = new Color(0.3f, 0.55f, 0.2f);
-            Color darkLeaf = new Color(0.2f, 0.4f, 0.15f);
+            Color leaf = new Color(0.30f, 0.58f, 0.20f);
+            Color darkLeaf = new Color(0.20f, 0.42f, 0.15f);
             Color transparent = new Color(0, 0, 0, 0);
 
             for (int x = 0; x < TileSize; x++)
                 for (int y = 0; y < TileSize; y++)
                 {
-                    int r = rng.Next(0, 10);
-                    if (r < 2)
-                        SetTilePixel(atlas, TileLeaves, x, y, transparent);       // 透明孔洞
+                    int r = rng.Next(0, 12);
+                    if (r < 1)
+                        SetTilePixel(atlas, TileLeaves, x, y, transparent);       // 少量透明孔洞
                     else if (r < 5)
-                        SetTilePixel(atlas, TileLeaves, x, y, NoiseColor(darkLeaf, 0.1f, rng));
+                        SetTilePixel(atlas, TileLeaves, x, y, NoiseColor(darkLeaf, 0.10f, rng));
                     else
-                        SetTilePixel(atlas, TileLeaves, x, y, NoiseColor(leaf, 0.12f, rng));
+                        SetTilePixel(atlas, TileLeaves, x, y, NoiseColor(leaf, 0.10f, rng));
                 }
         }
 
-        /// <summary>水：蓝色波纹。</summary>
+        /// <summary>水：清透蓝绿色波纹。</summary>
         private static void DrawWater(Texture2D atlas, System.Random rng)
         {
-            Color water = new Color(0.25f, 0.4f, 0.8f, 0.7f);
-            Color lightWater = new Color(0.35f, 0.5f, 0.9f, 0.7f);
+            Color water = new Color(0.20f, 0.45f, 0.75f, 0.65f);
+            Color lightWater = new Color(0.30f, 0.55f, 0.85f, 0.65f);
 
             for (int x = 0; x < TileSize; x++)
                 for (int y = 0; y < TileSize; y++)
@@ -427,7 +510,7 @@ namespace Minecraft.Game.World
                     // 正弦波纹
                     float wave = Mathf.Sin(x * 0.8f) * Mathf.Cos(y * 0.6f);
                     Color c = wave > 0 ? lightWater : water;
-                    SetTilePixel(atlas, TileWater, x, y, NoiseColor(c, 0.05f, rng));
+                    SetTilePixel(atlas, TileWater, x, y, NoiseColor(c, 0.04f, rng));
                 }
         }
 
@@ -507,6 +590,276 @@ namespace Minecraft.Game.World
             for (int x = 0; x < TileSize; x++)
                 for (int y = 0; y < TileSize; y++)
                     SetTilePixel(atlas, TileAir, x, y, transparent);
+        }
+
+        // ==================== 新增方块纹理绘制 ====================
+
+        /// <summary>雪方块：白色带细微蓝灰噪点。</summary>
+        private static void DrawSnow(Texture2D atlas, System.Random rng)
+        {
+            Color snow = new Color(0.92f, 0.94f, 0.96f);
+            for (int x = 0; x < TileSize; x++)
+                for (int y = 0; y < TileSize; y++)
+                    SetTilePixel(atlas, TileSnow, x, y, NoiseColor(snow, 0.05f, rng));
+        }
+
+        /// <summary>冰块：浅蓝半透明，带裂纹光泽。</summary>
+        private static void DrawIce(Texture2D atlas, System.Random rng)
+        {
+            Color ice = new Color(0.62f, 0.74f, 0.88f, 0.55f);
+            Color bright = new Color(0.8f, 0.9f, 1f, 0.55f);
+            for (int x = 0; x < TileSize; x++)
+                for (int y = 0; y < TileSize; y++)
+                {
+                    Color c = ((x + y) % 7 == 0) ? bright : ice;
+                    SetTilePixel(atlas, TileIce, x, y, NoiseColor(c, 0.04f, rng));
+                }
+        }
+
+        /// <summary>仙人掌：绿色，竖向凸棱，边缘有暗色刺。</summary>
+        private static void DrawCactus(Texture2D atlas, System.Random rng)
+        {
+            Color cactus = new Color(0.27f, 0.49f, 0.22f);
+            Color ridge = new Color(0.33f, 0.58f, 0.26f);
+            Color spine = new Color(0.18f, 0.32f, 0.15f);
+
+            for (int x = 0; x < TileSize; x++)
+            {
+                // 边缘 1 像素为暗色刺，中间两条竖棱
+                bool isEdge = x == 0 || x == TileSize - 1;
+                bool isRidge = x == 4 || x == 11;
+                Color col = isEdge ? spine : (isRidge ? ridge : cactus);
+                for (int y = 0; y < TileSize; y++)
+                    SetTilePixel(atlas, TileCactus, x, y, NoiseColor(col, 0.08f, rng));
+            }
+        }
+
+        /// <summary>花：绿色底座 + 中心彩色花瓣。花瓣颜色由 oreColor 传入。</summary>
+        private static void DrawFlower(Texture2D atlas, System.Random rng, int tileIndex, Color petalColor)
+        {
+            Color stem = new Color(0.25f, 0.45f, 0.18f);
+            Color transparent = new Color(0, 0, 0, 0);
+
+            for (int x = 0; x < TileSize; x++)
+                for (int y = 0; y < TileSize; y++)
+                {
+                    // 中心 6x6 区域为花瓣，下方茎杆，其余透明
+                    int cx = TileSize / 2, cy = TileSize / 2;
+                    int dx = x - cx, dy = y - cy;
+                    int dist2 = dx * dx + dy * dy;
+
+                    Color c;
+                    if (dist2 <= 9)
+                        c = NoiseColor(petalColor, 0.12f, rng);          // 花瓣
+                    else if (dist2 <= 16 && rng.Next(0, 3) != 0)
+                        c = NoiseColor(petalColor, 0.12f, rng);          // 花瓣外圈
+                    else if (x == cx && y >= cy && y < TileSize - 1)
+                        c = NoiseColor(stem, 0.1f, rng);                 // 茎杆
+                    else
+                        c = transparent;                                  // 透明背景
+
+                    SetTilePixel(atlas, tileIndex, x, y, c);
+                }
+        }
+
+        /// <summary>蘑菇：上半红色菌盖，下半白色菌柄。</summary>
+        private static void DrawMushroom(Texture2D atlas, System.Random rng)
+        {
+            Color cap = new Color(0.7f, 0.27f, 0.22f);
+            Color spot = new Color(0.95f, 0.92f, 0.85f);
+            Color stem = new Color(0.9f, 0.85f, 0.75f);
+            Color transparent = new Color(0, 0, 0, 0);
+
+            int capBottom = TileSize / 2; // 菌盖占上半部分
+
+            for (int x = 0; x < TileSize; x++)
+                for (int y = 0; y < TileSize; y++)
+                {
+                    Color c;
+                    if (y >= capBottom)
+                    {
+                        // 菌盖：随机白点
+                        c = rng.Next(0, 6) == 0 ? spot : cap;
+                        c = NoiseColor(c, 0.1f, rng);
+                    }
+                    else if (x >= 5 && x <= 10)
+                    {
+                        // 菌柄：中间竖条
+                        c = NoiseColor(stem, 0.08f, rng);
+                    }
+                    else
+                        c = transparent;
+
+                    SetTilePixel(atlas, TileMushroom, x, y, c);
+                }
+        }
+
+        /// <summary>藤蔓：绿色叶片从顶部垂下，下半透明。</summary>
+        private static void DrawVine(Texture2D atlas, System.Random rng)
+        {
+            Color leaf = new Color(0.22f, 0.42f, 0.16f);
+            Color darkLeaf = new Color(0.16f, 0.32f, 0.12f);
+            Color transparent = new Color(0, 0, 0, 0);
+
+            for (int x = 0; x < TileSize; x++)
+            {
+                // 每列从顶部向下垂落随机长度
+                int len = 4 + rng.Next(0, TileSize - 2);
+                for (int y = 0; y < TileSize; y++)
+                {
+                    int fromTop = TileSize - 1 - y; // y 高 = 顶部
+                    Color c;
+                    if (fromTop < len)
+                        c = rng.Next(0, 3) == 0 ? darkLeaf : leaf;
+                    else
+                        c = transparent;
+                    SetTilePixel(atlas, TileVine, x, y, NoiseColor(c, 0.1f, rng));
+                }
+            }
+        }
+
+        /// <summary>丛林草侧面：深绿色草层 + 泥土底，比普通草更深。</summary>
+        private static void DrawJungleGrassSide(Texture2D atlas, System.Random rng)
+        {
+            Color grass = new Color(0.22f, 0.42f, 0.16f);
+            Color dirt = new Color(0.42f, 0.3f, 0.18f);
+
+            for (int x = 0; x < TileSize; x++)
+            {
+                int grassH = 4 + rng.Next(0, 3); // 草层 4~6 像素
+                for (int y = 0; y < TileSize; y++)
+                {
+                    Color c = (y >= TileSize - grassH) ? grass : dirt;
+                    SetTilePixel(atlas, TileJungleGrass, x, y, NoiseColor(c, 0.14f, rng));
+                }
+            }
+        }
+
+        /// <summary>丛林草顶面：深绿色噪点。</summary>
+        private static void DrawJungleGrassTop(Texture2D atlas, System.Random rng)
+        {
+            Color grass = new Color(0.22f, 0.42f, 0.16f);
+            for (int x = 0; x < TileSize; x++)
+                for (int y = 0; y < TileSize; y++)
+                    SetTilePixel(atlas, TileJungleGrassTop, x, y, NoiseColor(grass, 0.16f, rng));
+        }
+
+        // ==================== 新增树种方块纹理绘制 ====================
+
+        /// <summary>松树原木侧面：深棕色树皮，竖向裂纹。</summary>
+        private static void DrawPineLogSide(Texture2D atlas, System.Random rng)
+        {
+            Color bark = new Color(0.24f, 0.18f, 0.12f);
+            Color darkBark = new Color(0.16f, 0.12f, 0.08f);
+            for (int x = 0; x < TileSize; x++)
+            {
+                Color col = (x % 5 == 0 || x % 8 == 0) ? darkBark : bark;
+                for (int y = 0; y < TileSize; y++)
+                    SetTilePixel(atlas, TilePineLogSide, x, y, NoiseColor(col, 0.08f, rng));
+            }
+        }
+
+        /// <summary>松树原木截面：深色年轮。</summary>
+        private static void DrawPineLogTop(Texture2D atlas, System.Random rng)
+        {
+            Color ring = new Color(0.36f, 0.26f, 0.16f);
+            Color darkRing = new Color(0.22f, 0.16f, 0.10f);
+            float cx = TileSize * 0.5f, cy = TileSize * 0.5f;
+            for (int x = 0; x < TileSize; x++)
+                for (int y = 0; y < TileSize; y++)
+                {
+                    float dist = Mathf.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+                    Color c = ((int)(dist * 1.5f) % 3 == 0) ? darkRing : ring;
+                    SetTilePixel(atlas, TilePineLogTop, x, y, NoiseColor(c, 0.06f, rng));
+                }
+        }
+
+        /// <summary>白桦原木侧面：白色树干带黑色横斑（白桦特征）。</summary>
+        private static void DrawBirchLogSide(Texture2D atlas, System.Random rng)
+        {
+            Color bark = new Color(0.88f, 0.88f, 0.85f);
+            Color darkMark = new Color(0.12f, 0.10f, 0.08f);
+            for (int x = 0; x < TileSize; x++)
+                for (int y = 0; y < TileSize; y++)
+                {
+                    // 约 12% 概率出现黑色横斑
+                    Color c = rng.Next(0, 9) == 0 ? darkMark : bark;
+                    SetTilePixel(atlas, TileBirchLogSide, x, y, NoiseColor(c, 0.05f, rng));
+                }
+        }
+
+        /// <summary>白桦原木截面：浅色年轮。</summary>
+        private static void DrawBirchLogTop(Texture2D atlas, System.Random rng)
+        {
+            Color ring = new Color(0.82f, 0.80f, 0.75f);
+            Color darkRing = new Color(0.65f, 0.60f, 0.52f);
+            float cx = TileSize * 0.5f, cy = TileSize * 0.5f;
+            for (int x = 0; x < TileSize; x++)
+                for (int y = 0; y < TileSize; y++)
+                {
+                    float dist = Mathf.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+                    Color c = ((int)(dist * 1.3f) % 3 == 0) ? darkRing : ring;
+                    SetTilePixel(atlas, TileBirchLogTop, x, y, NoiseColor(c, 0.05f, rng));
+                }
+        }
+
+        /// <summary>松树叶：深绿色，饱满无透明孔洞（松针密实感）。</summary>
+        private static void DrawPineLeaves(Texture2D atlas, System.Random rng)
+        {
+            Color leaf = new Color(0.13f, 0.35f, 0.16f);
+            Color darkLeaf = new Color(0.08f, 0.25f, 0.10f);
+            for (int x = 0; x < TileSize; x++)
+                for (int y = 0; y < TileSize; y++)
+                {
+                    Color c = rng.Next(0, 3) == 0 ? darkLeaf : leaf;
+                    SetTilePixel(atlas, TilePineLeaves, x, y, NoiseColor(c, 0.10f, rng));
+                }
+        }
+
+        /// <summary>白桦树叶：浅黄绿色（秋季感），饱满无孔洞。</summary>
+        private static void DrawBirchLeaves(Texture2D atlas, System.Random rng)
+        {
+            Color leaf = new Color(0.59f, 0.71f, 0.27f);
+            Color bright = new Color(0.72f, 0.82f, 0.38f);
+            for (int x = 0; x < TileSize; x++)
+                for (int y = 0; y < TileSize; y++)
+                {
+                    Color c = rng.Next(0, 4) == 0 ? bright : leaf;
+                    SetTilePixel(atlas, TileBirchLeaves, x, y, NoiseColor(c, 0.10f, rng));
+                }
+        }
+
+        /// <summary>丛林树叶：深绿大叶，带少量透明孔洞。</summary>
+        private static void DrawJungleLeaves(Texture2D atlas, System.Random rng)
+        {
+            Color leaf = new Color(0.16f, 0.39f, 0.14f);
+            Color darkLeaf = new Color(0.10f, 0.28f, 0.08f);
+            Color transparent = new Color(0, 0, 0, 0);
+            for (int x = 0; x < TileSize; x++)
+                for (int y = 0; y < TileSize; y++)
+                {
+                    int r = rng.Next(0, 10);
+                    if (r < 1)
+                        SetTilePixel(atlas, TileJungleLeaves, x, y, transparent);
+                    else if (r < 4)
+                        SetTilePixel(atlas, TileJungleLeaves, x, y, NoiseColor(darkLeaf, 0.10f, rng));
+                    else
+                        SetTilePixel(atlas, TileJungleLeaves, x, y, NoiseColor(leaf, 0.10f, rng));
+                }
+        }
+
+        /// <summary>云方块：白色柔和，边缘略透明。</summary>
+        private static void DrawCloud(Texture2D atlas, System.Random rng)
+        {
+            Color cloud = new Color(1f, 1f, 1f, 0.85f);
+            Color edge = new Color(1f, 1f, 1f, 0.5f);
+            for (int x = 0; x < TileSize; x++)
+                for (int y = 0; y < TileSize; y++)
+                {
+                    bool isEdge = x == 0 || x == TileSize - 1 || y == 0 || y == TileSize - 1;
+                    Color c = isEdge ? edge : cloud;
+                    SetTilePixel(atlas, TileCloud, x, y, NoiseColor(c, 0.04f, rng));
+                }
         }
     }
 }

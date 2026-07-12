@@ -804,4 +804,56 @@ namespace MMO.Protocol
             return msg;
         }
     }
+
+    // ==================== 地图状态同步 ====================
+
+    /// <summary>方块变更请求（客户端→服务端）。</summary>
+    public class BlockChangeReq
+    {
+        public int x;
+        public int y;
+        public int z;
+        public int blockType;
+
+        public byte[] Serialize()
+        {
+            return ProtoSerializer.Serialize(s =>
+            {
+                ProtoSerializer.WriteInt32(s, 1, x);
+                ProtoSerializer.WriteInt32(s, 2, y);
+                ProtoSerializer.WriteInt32(s, 3, z);
+                ProtoSerializer.WriteInt32(s, 4, blockType);
+            });
+        }
+    }
+
+    /// <summary>方块变更广播（服务端→客户端）。</summary>
+    public class BlockChangeBroadcast
+    {
+        public int x;
+        public int y;
+        public int z;
+        public int blockType;
+
+        public static BlockChangeBroadcast Deserialize(byte[] data)
+        {
+            var msg = new BlockChangeBroadcast();
+            int offset = 0;
+            while (offset < data.Length)
+            {
+                int tag = ProtoSerializer.ReadTag(data, ref offset);
+                int field = tag >> 3;
+                int wire = tag & 0x7;
+                switch (field)
+                {
+                    case 1: msg.x = ProtoSerializer.ReadInt32(data, ref offset); break;
+                    case 2: msg.y = ProtoSerializer.ReadInt32(data, ref offset); break;
+                    case 3: msg.z = ProtoSerializer.ReadInt32(data, ref offset); break;
+                    case 4: msg.blockType = ProtoSerializer.ReadInt32(data, ref offset); break;
+                    default: ProtoSerializer.SkipField(data, ref offset, wire); break;
+                }
+            }
+            return msg;
+        }
+    }
 }

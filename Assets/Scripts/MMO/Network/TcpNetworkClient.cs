@@ -40,6 +40,9 @@ namespace MMO.Network
         private int _seqCounter;
         private long _lastServerTime;
 
+        /// <summary>每帧最多派发的消息数量，防止突发大量消息卡死主线程。</summary>
+        private const int MaxMessagesPerFrame = 100;
+
         // ==================== 事件 ====================
         public event Action<int, byte[]> OnMessageReceived;   // msgId, payload
         public event Action OnConnected;
@@ -52,10 +55,11 @@ namespace MMO.Network
 
         private void Update()
         {
-            // 在主线程派发所有积压消息
+            // 在主线程派发积压消息（每帧上限 MaxMessagesPerFrame，超出延后下一帧处理）
             lock (_queueLock)
             {
-                while (_recvQueue.Count > 0)
+                int processed = 0;
+                while (_recvQueue.Count > 0 && processed < MaxMessagesPerFrame)
                 {
                     var (msgId, seq, payload) = _recvQueue.Dequeue();
                     try
@@ -71,6 +75,12 @@ namespace MMO.Network
                     {
                         Debug.LogError($"[Net] 派发消息 msgId={msgId} 异常: {e}");
                     }
+                    processed++;
+                }
+
+                if (_recvQueue.Count > 0)
+                {
+                    Debug.LogWarning($"[Net] 本帧消息已达上限 {MaxMessagesPerFrame}，剩余 {_recvQueue.Count} 条延后下一帧处理");
                 }
             }
         }
@@ -133,13 +143,13 @@ namespace MMO.Network
         public void Disconnect(bool silent = false)
         {
             _running = false;
-            try { _stream?.Close(); } catch { }
-            try { _tcp?.Close(); } catch { }
+            try { _stream?.Close(); } catch (Exception e) { Debug.LogWarning($"[TcpClient] 关闭流异常: {e.Message}"); }
+            try { _tcp?.Close(); } catch (Exception e) { Debug.LogWarning($"[TcpClient] 关闭Socket异常: {e.Message}"); }
             _stream = null;
             _tcp = null;
 
-            try { _receiveThread?.Join(500); } catch { }
-            try { _heartbeatThread?.Join(500); } catch { }
+            try { _receiveThread?.Join(500); } catch (Exception e) { Debug.LogWarning($"[TcpClient] 等待接收线程结束异常: {e.Message}"); }
+            try { _heartbeatThread?.Join(500); } catch (Exception e) { Debug.LogWarning($"[TcpClient] 等待心跳线程结束异常: {e.Message}"); }
             _receiveThread = null;
             _heartbeatThread = null;
 

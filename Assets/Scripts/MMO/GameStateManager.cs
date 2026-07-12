@@ -45,6 +45,9 @@ namespace Minecraft.MMO
 
             /// <summary>已在游戏中。</summary>
             InGame,
+
+            /// <summary>断线重连中。</summary>
+            Reconnecting,
         }
 
         // ==================== 单例 ====================
@@ -186,6 +189,8 @@ namespace Minecraft.MMO
             net.OnServerListAck += HandleServerListAck;
             net.OnRoleListAck += HandleRoleListAck;
             net.OnEnterGameAck += HandleEnterGameAck;
+            net.OnReconnectSuccess += HandleReconnectSuccess;
+            net.OnReconnectFailed += HandleReconnectFailed;
 
             _eventsBound = true;
         }
@@ -217,11 +222,22 @@ namespace Minecraft.MMO
             TransitionTo(GameState.Offline);
         }
 
-        /// <summary>连接断开：回到离线状态。</summary>
+        /// <summary>连接断开：如果在游戏中，自动重连；否则回到离线状态。</summary>
         private void HandleDisconnected(string reason)
         {
             Debug.LogWarning($"[GameState] 连接断开: {reason}");
-            TransitionTo(GameState.Offline);
+            var net = NetworkManager.Instance;
+            // 如果之前在游戏中且不是主动断开，启动断线重连
+            if (net != null && net.IsInGame && !reason.Contains("主动断开"))
+            {
+                Debug.Log("[GameState] 玩家在游戏中断线，启动自动重连...");
+                TransitionTo(GameState.Reconnecting);
+                net.StartReconnect();
+            }
+            else
+            {
+                TransitionTo(GameState.Offline);
+            }
         }
 
         /// <summary>登录响应：成功则自动请求服务器列表。</summary>
@@ -277,10 +293,28 @@ namespace Minecraft.MMO
             }
             else
             {
-                TransitionTo(GameState.RoleList);
+                // 重连时进入游戏失败也回到 Offline（可能角色已被清理）
+                if (CurrentState == GameState.Reconnecting)
+                    TransitionTo(GameState.Offline);
+                else
+                    TransitionTo(GameState.RoleList);
                 OnEnterGameFailed?.Invoke(msg.code);
                 Debug.LogWarning($"[GameState] 进入游戏失败: {ErrorCode.Describe(msg.code)}");
             }
+        }
+
+        /// <summary>断线重连成功：恢复游戏状态。</summary>
+        private void HandleReconnectSuccess()
+        {
+            Debug.Log("[GameState] 断线重连成功，恢复游戏状态");
+            TransitionTo(GameState.InGame);
+        }
+
+        /// <summary>断线重连失败：回到离线状态。</summary>
+        private void HandleReconnectFailed(string reason)
+        {
+            Debug.LogWarning($"[GameState] 断线重连失败: {reason}");
+            TransitionTo(GameState.Offline);
         }
     }
 }
